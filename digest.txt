@@ -1,0 +1,709 @@
+Directory structure:
+└── sync-stream/
+    ├── docker-compose.yml
+    ├── package.json
+    ├── tsconfig.base.json
+    ├── .env.example
+    ├── apps/
+    │   └── api/
+    │       ├── package.json
+    │       ├── tsconfig.json
+    │       ├── .env.example
+    │       ├── prisma/
+    │       │   └── schema.prisma
+    │       └── src/
+    │           ├── app.ts
+    │           ├── server.ts
+    │           ├── config/
+    │           │   ├── index.ts
+    │           │   └── logger.ts
+    │           ├── infrastructure/
+    │           │   ├── prisma.ts
+    │           │   └── ready.ts
+    │           ├── middlewares/
+    │           │   ├── cors.middleware.ts
+    │           │   ├── error.middleware.ts
+    │           │   └── req.middleware.ts
+    │           └── realtime/
+    │               └── socket-server.ts
+    └── packages/
+        └── contracts/
+            ├── package.json
+            ├── tsconfig.json
+            └── src/
+                └── index.ts
+
+================================================
+FILE: docker-compose.yml
+================================================
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: syncstream
+      POSTGRES_PASSWORD: syncstream
+      POSTGRES_DB: syncstream
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncstream"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+
+================================================
+FILE: package.json
+================================================
+{
+  "name": "syncstream",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time watch-party platform â€” synchronized playback, rooms, chat",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:packages": "npm run build -w @syncstream/contracts",
+    "dev:api": "npm run dev -w @syncstream/api",
+    "dev:web": "npm run dev -w @syncstream/web",
+    "db:generate": "npm run generate -w @syncstream/api",
+    "db:migrate": "npm run migrate -w @syncstream/api",
+    "db:studio": "npm run studio -w @syncstream/api",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist packages/*/dist"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "tsx": "^4.20.5",
+    "@types/node": "^22.15.29"
+  }
+}
+
+
+================================================
+FILE: tsconfig.base.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  }
+}
+
+
+================================================
+FILE: .env.example
+================================================
+NODE_ENV=development
+PORT=4000
+LOG_LEVEL=info
+
+# Database
+DATABASE_URL=postgresql://syncstream:syncstream@localhost:5432/syncstream?schema=public
+
+# CORS â€” comma-separated origins
+CLIENT_ORIGINS=http://localhost:3000
+
+# Socket.IO
+SOCKET_PATH=/socket.io
+
+
+================================================
+FILE: apps/api/package.json
+================================================
+{
+  "name": "@syncstream/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@syncstream/contracts": "*",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.3.0",
+    "pg": "^8.16.0",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.29",
+    "pino-pretty": "^13.0.0",
+    "prisma": "^7.10.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
+
+
+================================================
+FILE: apps/api/tsconfig.json
+================================================
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
+
+
+================================================
+FILE: apps/api/.env.example
+================================================
+NODE_ENV=development
+PORT=4000
+LOG_LEVEL=info
+DATABASE_URL=postgresql://syncstream:syncstream@localhost:5432/syncstream?schema=public
+CLIENT_ORIGINS=http://localhost:3000
+SOCKET_PATH=/socket.io
+
+
+================================================
+FILE: apps/api/prisma/schema.prisma
+================================================
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Minimal Phase 0 model â€” just enough to prove the DB connection.
+// Full User / Room / RoomMember models arrive in Phase 1â€“2.
+model HealthCheck {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}
+
+
+================================================
+FILE: apps/api/src/app.ts
+================================================
+import express from "express";
+import { corsMiddleware } from "./middleware/cors.js";
+import { requestLogger } from "./middleware/request-logger.js";
+import { errorMiddleware } from "./middleware/error.js";
+import { getReadyStatus } from "./infrastructure/ready.js";
+
+export function createApp() {
+  const app = express();
+
+  app.use(corsMiddleware);
+  app.use(express.json());
+  app.use(requestLogger);
+
+  app.get("/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      service: "syncstream-api",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/ready", async (_req, res) => {
+    const result = await getReadyStatus();
+    res.status(result.ready ? 200 : 503).json({
+      status: result.ready ? "ready" : "not_ready",
+      service: "syncstream-api",
+      checks: result.checks,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.use(errorMiddleware);
+  return app;
+}
+
+
+================================================
+FILE: apps/api/src/server.ts
+================================================
+import { createServer } from "node:http";
+import { createApp } from "./app.js";
+import { config } from "./config/index.js";
+import { logger } from "./config/logger.js";
+import { prisma } from "./infrastructure/prisma.js";
+import { createSocketServer } from "./realtime/socket-server.js";
+
+async function main() {
+  const app = createApp();
+  const httpServer = createServer(app);
+
+  // Attach Socket.IO to the same HTTP server
+  const io = createSocketServer(httpServer);
+
+  httpServer.listen(config.PORT, () => {
+    logger.info(`syncstream-api listening on port ${config.PORT}`);
+    logger.info(`Socket.IO path: ${config.SOCKET_PATH}`);
+  });
+
+  const shutdown = async (signal: string) => {
+    logger.info(`Shutting down API (${signal})`);
+
+    // Stop accepting new connections
+    io.close();
+
+    httpServer.close(async () => {
+      try {
+        await prisma.$disconnect();
+        logger.info("API shutdown complete");
+        process.exit(0);
+      } catch (err) {
+        logger.error(err, "Error during API shutdown");
+        process.exit(1);
+      }
+    });
+
+    // Force exit if drain takes too long
+    setTimeout(() => process.exit(1), 15_000).unref();
+  };
+
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+main().catch((err) => {
+  logger.error(err, "Failed to start server");
+  process.exit(1);
+});
+
+
+================================================
+FILE: apps/api/src/config/index.ts
+================================================
+import "dotenv/config";
+import { z } from "zod";
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  PORT: z.coerce.number().default(4000),
+  LOG_LEVEL: z.string().default("info"),
+  DATABASE_URL: z.string().min(1),
+  CLIENT_ORIGINS: z
+    .string()
+    .min(1)
+    .transform((v) => v.split(",").map((o) => o.trim())),
+  SOCKET_PATH: z.string().default("/socket.io"),
+});
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  console.error("Invalid environment variables:", parsed.error.flatten().fieldErrors);
+  process.exit(1);
+}
+
+export const config = {
+  ...parsed.data,
+  SERVICE_NAME: "syncstream-api",
+} as const;
+
+
+================================================
+FILE: apps/api/src/config/logger.ts
+================================================
+import pino from "pino";
+import { config } from "./index.js";
+
+const baseLogger = pino({
+  level: config.NODE_ENV === "development" ? "debug" : config.LOG_LEVEL,
+  ...(config.NODE_ENV === "development" && {
+    transport: {
+      target: "pino-pretty",
+      options: {
+        colorize: true,
+        translateTime: "SYS:standard",
+        ignore: "pid,hostname",
+      },
+    },
+  }),
+  base: {
+    service: config.SERVICE_NAME,
+  },
+});
+
+type LogMeta = Record<string, unknown> | Error | unknown;
+
+type LogFn = {
+  (msg: string, meta?: LogMeta): void;
+  (meta: LogMeta, msg?: string): void;
+};
+
+const toMergingObject = (meta?: LogMeta): Record<string, unknown> => {
+  if (meta === undefined || meta === null) return {};
+  if (meta instanceof Error) {
+    return {
+      err: {
+        message: meta.message,
+        name: meta.name,
+        stack: meta.stack,
+      },
+    };
+  }
+  if (typeof meta === "object") return meta as Record<string, unknown>;
+  return { value: meta };
+};
+
+const createLogFn = (level: "info" | "error" | "warn" | "debug"): LogFn => {
+  return (msgOrMeta: string | LogMeta, maybeMetaOrMsg?: string | LogMeta) => {
+    if (typeof msgOrMeta === "string") {
+      baseLogger[level](toMergingObject(maybeMetaOrMsg), msgOrMeta);
+      return;
+    }
+    const obj = toMergingObject(msgOrMeta);
+    const msg = typeof maybeMetaOrMsg === "string" ? maybeMetaOrMsg : undefined;
+    if (msg) baseLogger[level](obj, msg);
+    else baseLogger[level](obj);
+  };
+};
+
+export const logger = {
+  info: createLogFn("info"),
+  error: createLogFn("error"),
+  warn: createLogFn("warn"),
+  debug: createLogFn("debug"),
+  child: baseLogger.child.bind(baseLogger),
+};
+
+
+================================================
+FILE: apps/api/src/infrastructure/prisma.ts
+================================================
+import pg from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@prisma/client";
+import { config } from "../config/index.js";
+import { logger } from "../config/logger.js";
+
+const pool = new pg.Pool({ connectionString: config.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter,
+    log: config.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+  });
+
+if (config.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
+
+prisma.$on("query" as never, (e: { query: string; duration: number }) => {
+  if (config.LOG_LEVEL === "debug") {
+    logger.debug("prisma query", { query: e.query, durationMs: e.duration });
+  }
+});
+
+
+================================================
+FILE: apps/api/src/infrastructure/ready.ts
+================================================
+import pg from "pg";
+import { config } from "../config/index.js";
+
+export type ReadyCheck = {
+  name: string;
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+};
+
+export type ReadyResult = {
+  ready: boolean;
+  checks: ReadyCheck[];
+};
+
+async function checkPostgres(): Promise<ReadyCheck> {
+  const start = Date.now();
+  const pool = new pg.Pool({
+    connectionString: config.DATABASE_URL,
+    max: 1,
+    connectionTimeoutMillis: 2_000,
+  });
+  try {
+    await pool.query("SELECT 1");
+    return { name: "postgres", ok: true, latencyMs: Date.now() - start };
+  } catch (err) {
+    return {
+      name: "postgres",
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    await pool.end().catch(() => undefined);
+  }
+}
+
+export async function getReadyStatus(): Promise<ReadyResult> {
+  const pgCheck = await checkPostgres();
+  return {
+    ready: pgCheck.ok,
+    checks: [pgCheck],
+  };
+}
+
+
+================================================
+FILE: apps/api/src/middlewares/cors.middleware.ts
+================================================
+import cors from "cors";
+import { config } from "../config/index.js";
+
+export const corsMiddleware = cors({
+  origin: (origin, callback) => {
+    // no Origin = curl / server-to-server
+    if (!origin || config.CLIENT_ORIGINS.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin not allowed by CORS: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+  ],
+  optionsSuccessStatus: 204,
+});
+
+
+================================================
+FILE: apps/api/src/middlewares/error.middleware.ts
+================================================
+import type { Request, Response, NextFunction } from "express";
+import { logger } from "../config/logger.js";
+
+export function errorMiddleware(
+  err: Error,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
+  logger.error({ err }, "Unhandled error");
+
+  res.status(500).json({
+    success: false,
+    error: {
+      code: "INTERNAL_ERROR",
+      message:
+        process.env.NODE_ENV === "production"
+          ? "An unexpected error occurred"
+          : err.message,
+    },
+  });
+}
+
+
+================================================
+FILE: apps/api/src/middlewares/req.middleware.ts
+================================================
+import type { RequestHandler } from "express";
+import { logger } from "../config/logger.js";
+
+export const requestLogger: RequestHandler = (req, res, next) => {
+  const start = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+    logger.info(
+      `${req.method} ${req.originalUrl} ${res.statusCode} - ${durationMs.toFixed(2)} ms`,
+    );
+  });
+
+  next();
+};
+
+
+================================================
+FILE: apps/api/src/realtime/socket-server.ts
+================================================
+import type { Server as HttpServer } from "node:http";
+import { Server } from "socket.io";
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData,
+} from "@syncstream/contracts";
+import { ClientPingSchema } from "@syncstream/contracts";
+import { config } from "../config/index.js";
+import { logger } from "../config/logger.js";
+
+export function createSocketServer(httpServer: HttpServer) {
+  const io = new Server<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+  >(httpServer, {
+    path: config.SOCKET_PATH,
+    cors: {
+      origin: config.CLIENT_ORIGINS,
+      credentials: true,
+    },
+    // Phase 0: single instance â€” no Redis adapter yet
+  });
+
+  io.on("connection", (socket) => {
+    logger.info("Socket connected", { socketId: socket.id });
+
+    // Immediate hello so the client can prove transport works
+    socket.emit("server:hello", {
+      message: "Connected to SyncStream API",
+      serverTime: Date.now(),
+      socketId: socket.id,
+    });
+
+    socket.on("client:ping", (raw) => {
+      const parsed = ClientPingSchema.safeParse(raw);
+      if (!parsed.success) {
+        logger.warn("Invalid client:ping payload", {
+          socketId: socket.id,
+          issues: parsed.error.issues,
+        });
+        return;
+      }
+
+      socket.emit("server:pong", {
+        serverTime: Date.now(),
+        clientTime: parsed.data.clientTime,
+      });
+    });
+
+    socket.on("disconnect", (reason) => {
+      logger.info("Socket disconnected", { socketId: socket.id, reason });
+    });
+  });
+
+  return io;
+}
+
+
+================================================
+FILE: packages/contracts/package.json
+================================================
+{
+  "name": "@syncstream/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
+
+
+================================================
+FILE: packages/contracts/tsconfig.json
+================================================
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}
+
+
+================================================
+FILE: packages/contracts/src/index.ts
+================================================
+import { z } from "zod";
+
+// â”€â”€â”€ Server â†’ Client test event (Phase 0 only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const ServerHelloSchema = z.object({
+  message: z.string(),
+  serverTime: z.number(),
+  socketId: z.string(),
+});
+export type ServerHello = z.infer<typeof ServerHelloSchema>;
+
+// â”€â”€â”€ Client â†’ Server ping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const ClientPingSchema = z.object({
+  clientTime: z.number(),
+});
+export type ClientPing = z.infer<typeof ClientPingSchema>;
+
+// â”€â”€â”€ Typed event map (extend in later phases) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export interface ServerToClientEvents {
+  "server:hello": (payload: ServerHello) => void;
+  "server:pong": (payload: { serverTime: number; clientTime: number }) => void;
+}
+
+export interface ClientToServerEvents {
+  "client:ping": (payload: ClientPing) => void;
+}
+
+export interface InterServerEvents {}
+export interface SocketData {
+  // filled after auth in Phase 1
+  userId?: string;
+}
+

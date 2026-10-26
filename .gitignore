@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Generated files
+generated/
+.prisma/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs and OS files
+*.log
+.DS_Store
+
+# TypeScript build cache
+*.tsbuildinfo
