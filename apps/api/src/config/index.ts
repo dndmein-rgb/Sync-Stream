@@ -11,6 +11,11 @@ const envSchema = z.object({
     .min(1)
     .transform((v) => v.split(",").map((o) => o.trim())),
   SOCKET_PATH: z.string().default("/socket.io"),
+  JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_REFRESH_SECRET: z.string().min(32),
+    JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
+    JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+    BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 });
 
 const parsed = envSchema.safeParse(process.env);

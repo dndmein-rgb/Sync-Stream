@@ -9,6 +9,7 @@ import type {
 import { ClientPingSchema } from "@syncstream/contracts";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
+import { registerSocketAuth } from "./socket-auth.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server<
@@ -22,15 +23,20 @@ export function createSocketServer(httpServer: HttpServer) {
       origin: config.CLIENT_ORIGINS,
       credentials: true,
     },
-    // Phase 0: single instance — no Redis adapter yet
   });
 
-  io.on("connection", (socket) => {
-    logger.info("Socket connected", { socketId: socket.id });
+  // Reject unauthenticated sockets before connection handlers run
+  registerSocketAuth(io);
 
-    // Immediate hello so the client can prove transport works
+  io.on("connection", (socket) => {
+    const user = socket.data.user;
+    logger.info("Socket connected", {
+      socketId: socket.id,
+      userId: user?.id,
+    });
+
     socket.emit("server:hello", {
-      message: "Connected to SyncStream API",
+      message: `Connected as ${user?.email ?? "unknown"}`,
       serverTime: Date.now(),
       socketId: socket.id,
     });
@@ -38,13 +44,9 @@ export function createSocketServer(httpServer: HttpServer) {
     socket.on("client:ping", (raw) => {
       const parsed = ClientPingSchema.safeParse(raw);
       if (!parsed.success) {
-        logger.warn("Invalid client:ping payload", {
-          socketId: socket.id,
-          issues: parsed.error.issues,
-        });
+        logger.warn("Invalid client:ping", { socketId: socket.id });
         return;
       }
-
       socket.emit("server:pong", {
         serverTime: Date.now(),
         clientTime: parsed.data.clientTime,
@@ -52,7 +54,11 @@ export function createSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("disconnect", (reason) => {
-      logger.info("Socket disconnected", { socketId: socket.id, reason });
+      logger.info("Socket disconnected", {
+        socketId: socket.id,
+        userId: user?.id,
+        reason,
+      });
     });
   });
 

@@ -4,6 +4,7 @@ import { getReadyStatus } from "./infrastructure/ready.js";
 import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { requestLogger } from "./middlewares/req.middleware.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
+import authRoutes from "./modules/auth/auth.route.js";
 
 export function createApp() {
   const app = express();
@@ -29,7 +30,7 @@ export function createApp() {
       timestamp: new Date().toISOString(),
     });
   });
-
+  app.use("/auth", authRoutes);
   app.use(errorMiddleware);
   return app;
 }

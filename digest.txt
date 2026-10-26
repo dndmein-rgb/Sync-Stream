@@ -7,6 +7,7 @@ Directory structure:
     ├── apps/
     │   └── api/
     │       ├── package.json
+    │       ├── prisma.config.ts
     │       ├── tsconfig.json
     │       ├── .env.example
     │       ├── prisma/
@@ -21,40 +22,173 @@ Directory structure:
     │           │   ├── prisma.ts
     │           │   └── ready.ts
     │           ├── middlewares/
+    │           │   ├── auth.middleware.ts
     │           │   ├── cors.middleware.ts
     │           │   ├── error.middleware.ts
-    │           │   └── req.middleware.ts
-    │           └── realtime/
-    │               └── socket-server.ts
+    │           │   ├── req.middleware.ts
+    │           │   └── validate.middleware.ts
+    │           ├── modules/
+    │           │   └── auth/
+    │           │       ├── auth.container.ts
+    │           │       ├── auth.controller.ts
+    │           │       ├── auth.helper.ts
+    │           │       ├── auth.interface.ts
+    │           │       ├── auth.repository.ts
+    │           │       ├── auth.route.ts
+    │           │       ├── auth.schema.ts
+    │           │       ├── auth.service.ts
+    │           │       └── auth.types.ts
+    │           ├── realtime/
+    │           │   ├── socket-auth.ts
+    │           │   └── socket-server.ts
+    │           └── types/
+    │               └── express.d.ts
     └── packages/
-        └── contracts/
+        ├── contracts/
+        │   ├── package.json
+        │   ├── tsconfig.json
+        │   └── src/
+        │       └── index.ts
+        └── shared-utils/
             ├── package.json
-            ├── tsconfig.json
             └── src/
+                ├── asyncHandler.ts
+                ├── errors.ts
                 └── index.ts
 
 ================================================
 FILE: docker-compose.yml
 ================================================
+name: syncstream
+
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: syncstream-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: syncstream
-      POSTGRES_PASSWORD: syncstream
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syncstream}
       POSTGRES_DB: syncstream
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - syncstream_postgres_data:/var/lib/postgresql/data
+    networks:
+      - syncstream-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U syncstream"]
+      test: ["CMD-SHELL", "pg_isready -U syncstream -d syncstream"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: syncstream-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - syncstream_redis_data:/data
+    networks:
+      - syncstream-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: syncstream-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - syncstream_zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - syncstream-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: syncstream-kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9093"   # host talks to PLAINTEXT_HOST on 9093 inside the container
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - syncstream_kafka_data:/var/lib/kafka/data
+    networks:
+      - syncstream-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: syncstream-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: syncstream
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - syncstream-net
+
+  # Optional â€” remove if you don't want a UI for Postgres
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: syncstream-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@syncstream.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - syncstream-net
 
 volumes:
-  postgres_data:
+  syncstream_postgres_data:
+  syncstream_redis_data:
+  syncstream_zookeeper_data:
+  syncstream_kafka_data:
+
+networks:
+  syncstream-net:
+    driver: bridge
 
 
 ================================================
@@ -93,6 +227,7 @@ FILE: package.json
     "@types/node": "^22.15.29"
   }
 }
+
 
 
 ================================================
@@ -153,6 +288,7 @@ FILE: apps/api/package.json
   },
   "dependencies": {
     "@syncstream/contracts": "*",
+    "@syncstream/shared-utils": "*",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "cors": "^2.8.5",
@@ -162,7 +298,9 @@ FILE: apps/api/package.json
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "socket.io": "^4.8.4",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "bcryptjs": "^3.0.2",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
@@ -171,9 +309,29 @@ FILE: apps/api/package.json
     "pino-pretty": "^13.0.0",
     "prisma": "^7.10.0",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.9"
   }
 }
+
+
+
+================================================
+FILE: apps/api/prisma.config.ts
+================================================
+import "dotenv/config";
+import { defineConfig } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+  },
+  datasource: {
+    url: process.env["DATABASE_URL"],
+  },
+});
 
 
 ================================================
@@ -199,6 +357,11 @@ LOG_LEVEL=info
 DATABASE_URL=postgresql://syncstream:syncstream@localhost:5432/syncstream?schema=public
 CLIENT_ORIGINS=http://localhost:3000
 SOCKET_PATH=/socket.io
+JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
+JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+BCRYPT_ROUNDS=12
 
 
 ================================================
@@ -213,22 +376,48 @@ datasource db {
   provider = "postgresql"
 }
 
-// Minimal Phase 0 model â€” just enough to prove the DB connection.
-// Full User / Room / RoomMember models arrive in Phase 1â€“2.
-model HealthCheck {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+model User{
+id                   String   @id @default(uuid())
+email                String    @unique
+passwordHash          String
+name                   String
+avatarUrl              String?
+createdAt    DateTime       @default(now())
+updatedAt    DateTime       @updatedAt
+
+refreshTokens RefreshToken[]
+@@index([email])
 }
+
+model RefreshToken{
+id              String           @id @default(uuid())
+userId           String
+tokenHash         String
+expiresAt DateTime
+createdAt DateTime  @default(now())
+revokedAt DateTime?
+
+user       User    @relation(fields:[userId],references:[id],onDelete:Cascade)
+@@index([userId])
+  @@index([expiresAt])
+}
+model HealthCheck {
+id        String   @id @default(cuid())
+createdAt DateTime @default(now())
+}
+
 
 
 ================================================
 FILE: apps/api/src/app.ts
 ================================================
 import express from "express";
-import { corsMiddleware } from "./middleware/cors.js";
-import { requestLogger } from "./middleware/request-logger.js";
-import { errorMiddleware } from "./middleware/error.js";
+
 import { getReadyStatus } from "./infrastructure/ready.js";
+import { corsMiddleware } from "./middlewares/cors.middleware.js";
+import { requestLogger } from "./middlewares/req.middleware.js";
+import { errorMiddleware } from "./middlewares/error.middleware.js";
+import authRoutes from "./modules/auth/auth.route.js";
 
 export function createApp() {
   const app = express();
@@ -254,7 +443,7 @@ export function createApp() {
       timestamp: new Date().toISOString(),
     });
   });
-
+  app.use("/auth", authRoutes);
   app.use(errorMiddleware);
   return app;
 }
@@ -329,6 +518,11 @@ const envSchema = z.object({
     .min(1)
     .transform((v) => v.split(",").map((o) => o.trim())),
   SOCKET_PATH: z.string().default("/socket.io"),
+  JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_REFRESH_SECRET: z.string().min(32),
+    JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
+    JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+    BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -416,7 +610,7 @@ FILE: apps/api/src/infrastructure/prisma.ts
 ================================================
 import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../generated/prisma/client.js";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 
@@ -493,6 +687,74 @@ export async function getReadyStatus(): Promise<ReadyResult> {
 
 
 ================================================
+FILE: apps/api/src/middlewares/auth.middleware.ts
+================================================
+import { UnauthorizedError } from "@syncstream/shared-utils";
+import type {
+  NextFunction,
+  Request,
+  Response,
+} from "express";
+import jwt from "jsonwebtoken";
+import { authService } from "../modules/auth/auth.container.js";
+import { verifyAccessToken } from "../modules/auth/auth.helper.js";
+
+
+
+export const authenticate = async(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      return next(
+        new UnauthorizedError("Authentication required"),
+      );
+    }
+
+    if (!authHeader.startsWith("Bearer ")) {
+      return next(
+        new UnauthorizedError(
+          "Invalid authentication header format",
+        ),
+      );
+    }
+
+    const accessToken = authHeader.split(" ")[1];
+
+    if (!accessToken) {
+      return next(
+        new UnauthorizedError("Access token missing"),
+      );
+    }
+    const payload = verifyAccessToken(accessToken);
+  const user=await authService.resolveUser(payload.sub)
+
+    req.user = user
+
+    return next();
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      return next(
+        new UnauthorizedError("Access token expired"),
+      );
+    }
+
+    if (error instanceof jwt.JsonWebTokenError) {
+      return next(
+        new UnauthorizedError("Invalid access token"),
+      );
+    }
+
+    return next(error);
+  }
+};
+
+
+================================================
 FILE: apps/api/src/middlewares/cors.middleware.ts
 ================================================
 import cors from "cors";
@@ -522,6 +784,7 @@ export const corsMiddleware = cors({
 FILE: apps/api/src/middlewares/error.middleware.ts
 ================================================
 import type { Request, Response, NextFunction } from "express";
+import { AppError } from "@syncstream/shared-utils";
 import { logger } from "../config/logger.js";
 
 export function errorMiddleware(
@@ -530,8 +793,20 @@ export function errorMiddleware(
   res: Response,
   _next: NextFunction,
 ): void {
-  logger.error({ err }, "Unhandled error");
+  if (err instanceof AppError) {
+    logger.warn({ err, code: err.code }, err.message);
+    res.status(err.statusCode).json({
+      success: false,
+      error: {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+      },
+    });
+    return;
+  }
 
+  logger.error({ err }, "Unhandled error");
   res.status(500).json({
     success: false,
     error: {
@@ -566,6 +841,510 @@ export const requestLogger: RequestHandler = (req, res, next) => {
 
 
 ================================================
+FILE: apps/api/src/middlewares/validate.middleware.ts
+================================================
+import type { NextFunction, Request, Response } from "express";
+import { ZodType } from "zod";
+import type { ParamsDictionary } from "express-serve-static-core";
+import { BadRequestError } from "@syncstream/shared-utils";
+
+type ValidationTarget = "body" | "params" | "query";
+
+export const validate =
+  <T>(schema: ZodType<T>, target: ValidationTarget = "body") =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req[target]);
+    if (!result.success) {
+      const message = result.error.issues
+        .map(({ path, message }) => `${path.join(".")}:${message}`)
+        .join(",");
+      return next(new BadRequestError(message));
+    }
+    switch (target) {
+      case "body":
+        req.body = result.data;
+        break;
+
+      case "params":
+        req.params = result.data as ParamsDictionary;
+        break;
+
+      case "query":
+        res.locals.validatedQuery = result.data;
+        break;
+    }
+
+    next();
+  };
+
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.container.ts
+================================================
+import { AuthRepository } from "./auth.repository.js";
+import { AuthService } from "./auth.service.js";
+
+const authRepository = new AuthRepository()
+
+export const authService=new AuthService(authRepository)
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.controller.ts
+================================================
+import { asyncHandler } from "@syncstream/shared-utils";
+import type { Request, Response } from "express";
+import type { LoginBody, RefreshBody, RegisterBody } from "./auth.schema.js";
+import { authService } from "./auth.container.js";
+
+export const register = asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as RegisterBody;
+  const result = await authService.register(body);
+  res.status(201).json({
+    success: true,
+    message: "Registered successfully",
+    data: result,
+  });
+});
+
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as LoginBody;
+  const result = await authService.login(body);
+  res.status(200).json({
+    success: true,
+    message: "Logged in successfully",
+    data: result,
+  });
+});
+
+export const refresh = asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as RefreshBody;
+  const tokens = await authService.refresh(body.refreshToken);
+  res.status(200).json({
+    success: true,
+    data: tokens,
+  });
+});
+
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as Partial<RefreshBody>;
+  await authService.logout(body.refreshToken);
+  res.status(200).json({ success: true, message: "Logged out" });
+});
+
+export const logoutAll = asyncHandler(async (req: Request, res: Response) => {
+  await authService.logoutAll(req.user!.id);
+  res.status(200).json({ success: true, message: "Logged out from all sessions" });
+});
+
+export const me = asyncHandler(async (req: Request, res: Response) => {
+  const user = await authService.getMe(req.user!.id);
+  res.status(200).json({ success: true, data: user });
+});
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.helper.ts
+================================================
+import jwt, { SignOptions } from "jsonwebtoken";
+import { config } from "../../config/index.js";
+import crypto from "node:crypto";
+import { UnauthorizedError } from "@syncstream/shared-utils";
+
+export type AccessPayload = {
+  sub: string;
+  typ: "access";
+};
+
+export function signAccessToken(userId: string): string {
+  return jwt.sign(
+    { sub: userId, typ: "access" } satisfies AccessPayload,
+    config.JWT_ACCESS_SECRET,
+    { expiresIn: config.JWT_ACCESS_EXPIRES_IN as SignOptions["expiresIn"] },
+  );
+}
+
+
+export function verifyAccessToken(token: string): AccessPayload {
+  try {
+    const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as AccessPayload;
+    if (payload.typ !== "access" || !payload.sub) {
+      throw new UnauthorizedError("Invalid access token");
+    }
+    return payload;
+  } catch {
+    throw new UnauthorizedError("Invalid or expired access token");
+  }
+}
+
+/** Opaque refresh token (not a JWT) â€” store only the hash. */
+export function generateRefreshToken(): string {
+  return crypto.randomBytes(48).toString("base64url");
+}
+
+export function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export function refreshExpiresAt(): Date {
+  const match = /^(\d+)([dhms])$/.exec(config.JWT_REFRESH_EXPIRES_IN);
+  const now = Date.now();
+  if (!match) {
+    return new Date(now + 7 * 24 * 60 * 60 * 1000);
+  }
+  const n = Number(match[1]);
+  const unit = match[2];
+  const ms =
+    unit === "d" ? n * 86400000 :
+    unit === "h" ? n * 3600000 :
+    unit === "m" ? n * 60000 :
+    n * 1000;
+  return new Date(now + ms);
+}
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.interface.ts
+================================================
+import { RefreshToken, User } from "../../generated/prisma/client.js";
+import { AuthUser, SafeUser } from "./auth.types.js";
+
+export interface AuthInterface{
+  createUser(data: AuthUser): Promise<SafeUser>
+  findById(id:string):Promise<SafeUser|null>
+  findByEmail(email: string): Promise<User | null>
+  createRefreshToken(data: { userId: string, tokenHash: string, expiresAt: Date }): Promise<RefreshToken>
+  findValidRefreshToken(tokenHash: string): Promise<RefreshToken | null>
+  revokeRefreshToken(id: string): Promise<RefreshToken | null>
+  revokeAllForUser(userId:string):Promise<{count:number}
+}
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.repository.ts
+================================================
+import { RefreshToken, User } from "../../generated/prisma/client.js";
+import { prisma } from "../../infrastructure/prisma.js";
+import { AuthInterface } from "./auth.interface.js";
+import { AuthUser, SafeUser } from "./auth.types.js";
+
+export class AuthRepository implements AuthInterface {
+  async createUser(data: AuthUser): Promise<SafeUser> {
+    return prisma.user.create({
+      data,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+      },
+    });
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    return prisma.user.findUnique({
+      where: { email },
+    });
+  }
+  async findById(id: string): Promise<SafeUser | null> {
+    return prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+      },
+    });
+  }
+  async createRefreshToken(data: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }): Promise<RefreshToken> {
+    return prisma.refreshToken.create({ data });
+  }
+
+  async findValidRefreshToken(tokenHash: string): Promise<RefreshToken | null> {
+    return prisma.refreshToken.findFirst({
+      where: {
+        tokenHash,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+  }
+  async revokeRefreshToken(id: string): Promise<RefreshToken | null> {
+    return prisma.refreshToken.update({
+      where: { id },
+      data: { revokedAt: new Date() },
+    });
+  }
+  async revokeAllForUser(userId: string): Promise<{ count: number }> {
+    return prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.route.ts
+================================================
+import { Router } from "express";
+import { validate } from "../../middlewares/validate.middleware.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
+import {
+  LoginBodySchema,
+  RefreshBodySchema,
+  RegisterBodySchema,
+} from "./auth.schema.js";
+import {
+  login,
+  logout,
+  logoutAll,
+  me,
+  refresh,
+  register,
+} from "./auth.controller.js";
+
+const router = Router();
+
+router.post("/register", validate(RegisterBodySchema), register);
+router.post("/login", validate(LoginBodySchema), login);
+router.post("/refresh", validate(RefreshBodySchema), refresh);
+router.post("/logout", logout);
+
+router.get("/me", authenticate, me);
+router.post("/logout-all", authenticate, logoutAll);
+
+export default router;
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.schema.ts
+================================================
+import { z } from "zod";
+
+export const RegisterBodySchema = z.object({
+  email: z.email().max(320).transform((e) => e.toLowerCase().trim()),
+  password: z.string().min(8).max(128),
+  name: z.string().min(1).max(100),
+});
+export type RegisterBody = z.infer<typeof RegisterBodySchema>;
+
+export const LoginBodySchema = z.object({
+  email: z.email().transform((e) => e.toLowerCase().trim()),
+  password: z.string().min(1),
+});
+export type LoginBody = z.infer<typeof LoginBodySchema>;
+
+export const RefreshBodySchema = z.object({
+  refreshToken: z.string().min(1),
+});
+export type RefreshBody = z.infer<typeof RefreshBodySchema>;
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.service.ts
+================================================
+import { ConflictError, UnauthorizedError, ValidationError } from "@syncstream/shared-utils";
+import { AuthInterface } from "./auth.interface.js";
+import { LoginBody, RegisterBody } from "./auth.schema.js";
+import bcrypt from "bcryptjs";
+import { config } from "../../config/index.js";
+import {
+  generateRefreshToken,
+  hashToken,
+  refreshExpiresAt,
+  signAccessToken,
+} from "./auth.helper.js";
+import { SafeUser, TokenPair } from "./auth.types.js";
+
+export class AuthService {
+  constructor(private readonly repo: AuthInterface) {}
+
+  async register(input: RegisterBody) {
+    const { email, name, password } = input;
+    const existing = await this.repo.findByEmail(email);
+    if (existing) {
+      throw new ConflictError("Email already registered");
+    }
+    const passwordHash = await bcrypt.hash(password, config.BCRYPT_ROUNDS);
+    const user = await this.repo.createUser({
+      name,
+      email,
+      passwordHash,
+    });
+    const tokens = await this.issueTokens(user.id);
+    return { user, tokens };
+  }
+  async login(input: LoginBody) {
+    const user = await this.repo.findByEmail(input.email)
+    if (!user) {
+      throw new UnauthorizedError("Invalid email or password");
+    }
+    const isPasswordValid = await bcrypt.compare(input.password, user.passwordHash)
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedError("Invalid email or password");
+    }
+    
+    const tokens = await this.issueTokens(user.id);
+    return {user,tokens}
+  }
+
+  async refresh(refreshToken: string): Promise<TokenPair> {
+      if (!refreshToken) {
+        throw new ValidationError("refreshToken is required");
+      }
+  
+      const tokenHash = hashToken(refreshToken);
+      const token = await this.repo.findValidRefreshToken(tokenHash);
+      if (!token) {
+        throw new UnauthorizedError("Invalid or expired refresh token");
+      }
+  
+      // Rotate: revoke old, issue new pair
+      await this.repo.revokeRefreshToken(token.id);
+      return this.issueTokens(token.userId);
+  }  
+
+  async logout(refreshToken: string | undefined): Promise<void> {
+      if (!refreshToken) return;
+      const tokenHash = hashToken(refreshToken);
+      const row = await this.repo.findValidRefreshToken(tokenHash);
+      if (row) {
+        await this.repo.revokeRefreshToken(row.id);
+      }
+    }
+  
+    async logoutAll(userId: string): Promise<void> {
+      await this.repo.revokeAllForUser(userId);
+    }
+  
+    async getMe(userId: string): Promise<SafeUser> {
+      const user = await this.repo.findById(userId);
+      if (!user) {
+        throw new UnauthorizedError("User not found");
+      }
+      return user;
+    }
+
+    /** Used by HTTP + Socket middleware after JWT verify. */
+      async resolveUser(userId: string): Promise<SafeUser> {
+        return this.getMe(userId);
+      }
+  private async issueTokens(userId: string): Promise<TokenPair> {
+    const accessToken = signAccessToken(userId);
+    const refreshToken = generateRefreshToken();
+    const tokenHash = hashToken(refreshToken);
+
+    await this.repo.createRefreshToken({
+      userId,
+      tokenHash,
+      expiresAt: refreshExpiresAt(),
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: config.JWT_ACCESS_EXPIRES_IN,
+    };
+  }
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/auth/auth.types.ts
+================================================
+export type AuthUser = {
+  email: string;
+  name: string;
+  passwordHash: string;
+  avatarUrl?:string|null
+}
+
+export type TokenPair = {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: string;
+};
+
+export type SafeUser = {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl:string|null
+}
+
+
+================================================
+FILE: apps/api/src/realtime/socket-auth.ts
+================================================
+import { Socket } from "socket.io";
+import { verifyAccessToken } from "../modules/auth/auth.helper.js";
+import { authService } from "../modules/auth/auth.container.js";
+import { SafeUser } from "../modules/auth/auth.types.js";
+import { logger } from "../config/logger.js";
+/**
+ * Handshake auth: client must send
+ *   io(url, { auth: { token: accessToken } })
+ * Do NOT put the token in the query string.
+ */
+export async function verifySocketIdentity(socket: Socket): Promise<SafeUser> {
+  const token =
+    (socket.handshake.auth as { token?: string } | undefined)?.token ??
+    extractBearer(socket.handshake.headers.authorization);
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+
+  const payload = verifyAccessToken(token);
+  return authService.resolveUser(payload.sub);
+}
+
+function extractBearer(header: string | string[] | undefined): string | null {
+  if (!header || Array.isArray(header)) return null;
+  if (!header.startsWith("Bearer ")) return null;
+  return header.slice(7).trim() || null;
+}
+
+export function registerSocketAuth(io: {
+  use: (fn: (socket: Socket, next: (err?: Error) => void) => void) => void;
+}) {
+  io.use(async (socket, next) => {
+    try {
+      const user = await verifySocketIdentity(socket);
+      socket.data.user = user;
+      next();
+    } catch (err) {
+      logger.warn("Socket auth failed", {
+        socketId: socket.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      next(new Error("Unauthorized"));
+    }
+  });
+}
+
+
+
+================================================
 FILE: apps/api/src/realtime/socket-server.ts
 ================================================
 import type { Server as HttpServer } from "node:http";
@@ -579,6 +1358,7 @@ import type {
 import { ClientPingSchema } from "@syncstream/contracts";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
+import { registerSocketAuth } from "./socket-auth.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server<
@@ -592,15 +1372,20 @@ export function createSocketServer(httpServer: HttpServer) {
       origin: config.CLIENT_ORIGINS,
       credentials: true,
     },
-    // Phase 0: single instance â€” no Redis adapter yet
   });
 
-  io.on("connection", (socket) => {
-    logger.info("Socket connected", { socketId: socket.id });
+  // Reject unauthenticated sockets before connection handlers run
+  registerSocketAuth(io);
 
-    // Immediate hello so the client can prove transport works
+  io.on("connection", (socket) => {
+    const user = socket.data.user;
+    logger.info("Socket connected", {
+      socketId: socket.id,
+      userId: user?.id,
+    });
+
     socket.emit("server:hello", {
-      message: "Connected to SyncStream API",
+      message: `Connected as ${user?.email ?? "unknown"}`,
       serverTime: Date.now(),
       socketId: socket.id,
     });
@@ -608,13 +1393,9 @@ export function createSocketServer(httpServer: HttpServer) {
     socket.on("client:ping", (raw) => {
       const parsed = ClientPingSchema.safeParse(raw);
       if (!parsed.success) {
-        logger.warn("Invalid client:ping payload", {
-          socketId: socket.id,
-          issues: parsed.error.issues,
-        });
+        logger.warn("Invalid client:ping", { socketId: socket.id });
         return;
       }
-
       socket.emit("server:pong", {
         serverTime: Date.now(),
         clientTime: parsed.data.clientTime,
@@ -622,12 +1403,32 @@ export function createSocketServer(httpServer: HttpServer) {
     });
 
     socket.on("disconnect", (reason) => {
-      logger.info("Socket disconnected", { socketId: socket.id, reason });
+      logger.info("Socket disconnected", {
+        socketId: socket.id,
+        userId: user?.id,
+        reason,
+      });
     });
   });
 
   return io;
 }
+
+
+================================================
+FILE: apps/api/src/types/express.d.ts
+================================================
+import { SafeUser } from "../modules/auth/auth.types.ts";
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: SafeUser;
+    }
+  }
+}
+
+export {};
 
 
 ================================================
@@ -702,8 +1503,116 @@ export interface ClientToServerEvents {
 }
 
 export interface InterServerEvents {}
-export interface SocketData {
-  // filled after auth in Phase 1
-  userId?: string;
+
+export interface SocketData{
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    avatarUrl:string|null
+  }
 }
+
+
+================================================
+FILE: packages/shared-utils/package.json
+================================================
+{
+  "name": "@syncstream/shared-utils",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/express": "^5.0.2",
+    "typescript": "^5.9.2"
+  }
+}
+
+
+================================================
+FILE: packages/shared-utils/src/asyncHandler.ts
+================================================
+import type { Request, Response, NextFunction, RequestHandler } from "express";
+
+export function asyncHandler(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
+): RequestHandler {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
+
+================================================
+FILE: packages/shared-utils/src/errors.ts
+================================================
+export class AppError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly statusCode: number = 500,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "AppError";
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+export class NotFoundError extends AppError {
+  constructor(resource: string, id?: string) {
+    super(
+      "NOT_FOUND",
+      id ? `${resource} with id ${id} not found` : `${resource} not found`,
+      404,
+    );
+  }
+}
+
+export class BadRequestError extends AppError {
+  constructor(message = "Bad Request", details?: unknown) {
+    super("BAD_REQUEST", message, 400, details);
+  }
+}
+
+export class ValidationError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super("VALIDATION_ERROR", message, 400, details);
+  }
+}
+
+export class UnauthorizedError extends AppError {
+  constructor(message = "Unauthorized", details?: unknown) {
+    super("UNAUTHORIZED", message, 401, details);
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super("CONFLICT", message, 409, details);
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(message = "Forbidden", details?: unknown) {
+    super("FORBIDDEN", message, 403, details);
+  }
+}
+
+
+================================================
+FILE: packages/shared-utils/src/index.ts
+================================================
+export * from "./errors.js";
+export { asyncHandler } from "./asyncHandler.js";
 

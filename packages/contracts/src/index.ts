@@ -25,7 +25,12 @@ export interface ClientToServerEvents {
 }
 
 export interface InterServerEvents {}
-export interface SocketData {
-  // filled after auth in Phase 1
-  userId?: string;
+
+export interface SocketData{
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    avatarUrl:string|null
+  }
 }

@@ -7,9 +7,32 @@ datasource db {
   provider = "postgresql"
 }
 
-// Minimal Phase 0 model — just enough to prove the DB connection.
-// Full User / Room / RoomMember models arrive in Phase 1–2.
+model User{
+id                   String   @id @default(uuid())
+email                String    @unique
+passwordHash          String
+name                   String
+avatarUrl              String?
+createdAt    DateTime       @default(now())
+updatedAt    DateTime       @updatedAt
+
+refreshTokens RefreshToken[]
+@@index([email])
+}
+
+model RefreshToken{
+id              String           @id @default(uuid())
+userId           String
+tokenHash         String          @unique
+expiresAt DateTime
+createdAt DateTime  @default(now())
+revokedAt DateTime?
+
+user       User    @relation(fields:[userId],references:[id],onDelete:Cascade)
+@@index([userId])
+  @@index([expiresAt])
+}
 model HealthCheck {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+id        String   @id @default(uuid())
+createdAt DateTime @default(now())
 }
