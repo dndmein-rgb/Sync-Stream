@@ -10,6 +10,7 @@ import { ClientPingSchema } from "@syncstream/contracts";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { registerSocketAuth } from "./socket-auth.js";
+import { registerRoomHandlers } from "./room-handlers.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server<
@@ -25,7 +26,6 @@ export function createSocketServer(httpServer: HttpServer) {
     },
   });
 
-  // Reject unauthenticated sockets before connection handlers run
   registerSocketAuth(io);
 
   io.on("connection", (socket) => {
@@ -52,6 +52,8 @@ export function createSocketServer(httpServer: HttpServer) {
         clientTime: parsed.data.clientTime,
       });
     });
+
+    registerRoomHandlers(io, socket);
 
     socket.on("disconnect", (reason) => {
       logger.info("Socket disconnected", {

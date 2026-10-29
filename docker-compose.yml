@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syncstream}
       POSTGRES_DB: syncstream
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - syncstream_postgres_data:/var/lib/postgresql/data
     networks:
@@ -109,7 +109,7 @@ services:
     container_name: syncstream-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@syncstream.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
       - "5050:80"

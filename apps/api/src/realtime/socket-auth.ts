@@ -1,4 +1,4 @@
-import { Socket } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { verifyAccessToken } from "../modules/auth/auth.helper.js";
 import { authService } from "../modules/auth/auth.container.js";
 import { SafeUser } from "../modules/auth/auth.types.js";
@@ -26,9 +26,7 @@ function extractBearer(header: string | string[] | undefined): string | null {
   return header.slice(7).trim() || null;
 }
 
-export function registerSocketAuth(io: {
-  use: (fn: (socket: Socket, next: (err?: Error) => void) => void) => void;
-}) {
+export function registerSocketAuth(io: Server) {
   io.use(async (socket, next) => {
     try {
       const user = await verifySocketIdentity(socket);
@@ -39,6 +37,7 @@ export function registerSocketAuth(io: {
         socketId: socket.id,
         error: err instanceof Error ? err.message : String(err),
       });
+
       next(new Error("Unauthorized"));
     }
   });

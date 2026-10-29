@@ -1,0 +1,62 @@
+import { Router } from "express";
+import { authenticate } from "../../middlewares/auth.middleware.js";
+import { validate } from "../../middlewares/validate.middleware.js";
+import {
+  CreateRoomBodySchema,
+  JoinByCodeBodySchema,
+  JoinByIdBodySchema,
+  RoomIdParamsSchema,
+  UpdateRoomBodySchema,
+} from "./room.schema.js";
+import {
+  createRoom,
+  deleteRoom,
+  getRoom,
+  getRoomMembers,
+  joinByCode,
+  joinById,
+  leaveRoom,
+  updateRoom,
+} from "./room.controller.js";
+
+const router = Router();
+
+router.use(authenticate);
+
+router.post("/", validate(CreateRoomBodySchema), createRoom);
+router.post("/join", validate(JoinByCodeBodySchema), joinByCode);
+
+router.get(
+  "/:id",
+  validate(RoomIdParamsSchema, "params"),
+  getRoom,
+);
+router.get(
+  "/:id/members",
+  validate(RoomIdParamsSchema, "params"),
+  getRoomMembers,
+);
+router.post(
+  "/:id/join",
+  validate(RoomIdParamsSchema, "params"),
+  validate(JoinByIdBodySchema),
+  joinById,
+);
+router.post(
+  "/:id/leave",
+  validate(RoomIdParamsSchema, "params"),
+  leaveRoom,
+);
+router.patch(
+  "/:id",
+  validate(RoomIdParamsSchema, "params"),
+  validate(UpdateRoomBodySchema),
+  updateRoom,
+);
+router.delete(
+  "/:id",
+  validate(RoomIdParamsSchema, "params"),
+  deleteRoom,
+);
+
+export default router;

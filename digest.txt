@@ -3,15 +3,17 @@ Directory structure:
     ├── docker-compose.yml
     ├── package.json
     ├── tsconfig.base.json
-    ├── .env.example
     ├── apps/
     │   └── api/
     │       ├── package.json
     │       ├── prisma.config.ts
     │       ├── tsconfig.json
-    │       ├── .env.example
     │       ├── prisma/
-    │       │   └── schema.prisma
+    │       │   ├── schema.prisma
+    │       │   └── migrations/
+    │       │       ├── migration_lock.toml
+    │       │       └── 20261028095946_first/
+    │       │           └── migration.sql
     │       └── src/
     │           ├── app.ts
     │           ├── server.ts
@@ -28,17 +30,29 @@ Directory structure:
     │           │   ├── req.middleware.ts
     │           │   └── validate.middleware.ts
     │           ├── modules/
-    │           │   └── auth/
-    │           │       ├── auth.container.ts
-    │           │       ├── auth.controller.ts
-    │           │       ├── auth.helper.ts
-    │           │       ├── auth.interface.ts
-    │           │       ├── auth.repository.ts
-    │           │       ├── auth.route.ts
-    │           │       ├── auth.schema.ts
-    │           │       ├── auth.service.ts
-    │           │       └── auth.types.ts
+    │           │   ├── auth/
+    │           │   │   ├── auth.container.ts
+    │           │   │   ├── auth.controller.ts
+    │           │   │   ├── auth.helper.ts
+    │           │   │   ├── auth.interface.ts
+    │           │   │   ├── auth.repository.ts
+    │           │   │   ├── auth.route.ts
+    │           │   │   ├── auth.schema.ts
+    │           │   │   ├── auth.service.ts
+    │           │   │   └── auth.types.ts
+    │           │   └── room/
+    │           │       ├── room.container.ts
+    │           │       ├── room.controller.ts
+    │           │       ├── room.helper.ts
+    │           │       ├── room.interface.ts
+    │           │       ├── room.repository.ts
+    │           │       ├── room.route.ts
+    │           │       ├── room.schema.ts
+    │           │       ├── room.service.ts
+    │           │       └── room.types.ts
     │           ├── realtime/
+    │           │   ├── room-handlers.ts
+    │           │   ├── room-presence.ts
     │           │   ├── socket-auth.ts
     │           │   └── socket-server.ts
     │           └── types/
@@ -71,7 +85,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syncstream}
       POSTGRES_DB: syncstream
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - syncstream_postgres_data:/var/lib/postgresql/data
     networks:
@@ -170,7 +184,7 @@ services:
     container_name: syncstream-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@syncstream.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
       - "5050:80"
@@ -254,23 +268,6 @@ FILE: tsconfig.base.json
 
 
 ================================================
-FILE: .env.example
-================================================
-NODE_ENV=development
-PORT=4000
-LOG_LEVEL=info
-
-# Database
-DATABASE_URL=postgresql://syncstream:syncstream@localhost:5432/syncstream?schema=public
-
-# CORS â€” comma-separated origins
-CLIENT_ORIGINS=http://localhost:3000
-
-# Socket.IO
-SOCKET_PATH=/socket.io
-
-
-================================================
 FILE: apps/api/package.json
 ================================================
 {
@@ -349,22 +346,6 @@ FILE: apps/api/tsconfig.json
 
 
 ================================================
-FILE: apps/api/.env.example
-================================================
-NODE_ENV=development
-PORT=4000
-LOG_LEVEL=info
-DATABASE_URL=postgresql://syncstream:syncstream@localhost:5432/syncstream?schema=public
-CLIENT_ORIGINS=http://localhost:3000
-SOCKET_PATH=/socket.io
-JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
-JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
-BCRYPT_ROUNDS=12
-
-
-================================================
 FILE: apps/api/prisma/schema.prisma
 ================================================
 generator client {
@@ -374,6 +355,16 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum RoomVisibility{
+PRIVATE
+PUBLIC
+}
+enum RoomRole{
+HOST
+CO_HOST
+VIEWER  
 }
 
 model User{
@@ -386,25 +377,176 @@ createdAt    DateTime       @default(now())
 updatedAt    DateTime       @updatedAt
 
 refreshTokens RefreshToken[]
+hostedRooms  Room[]         @relation("RoomHost")
+memberships  RoomMember[]
 @@index([email])
 }
 
 model RefreshToken{
 id              String           @id @default(uuid())
 userId           String
-tokenHash         String
+tokenHash         String          @unique
 expiresAt DateTime
 createdAt DateTime  @default(now())
 revokedAt DateTime?
 
 user       User    @relation(fields:[userId],references:[id],onDelete:Cascade)
 @@index([userId])
-  @@index([expiresAt])
+@@index([expiresAt])
 }
+
+model Room{
+id                    String       @id @default(uuid())
+code                   String       @unique
+name                    String
+visibility               RoomVisibility    @default(PRIVATE)
+hostId                    String
+maxMembers                 Int          @default(10)
+createdAt  DateTime       @default(now())
+updatedAt  DateTime       @updatedAt
+
+
+host            User          @relation("RoomHost",fields:[hostId],references:[id],onDelete:Cascade)
+members         RoomMember[]
+
+}
+
+model RoomMember{
+roomId           String
+userId            String
+role              RoomRole   @default(VIEWER)
+joinedAt          DateTime    @default(now())
+
+room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+@@id([roomId, userId])
+@@index([userId, joinedAt])
+
+}
+
+
+
+
+
+
+
+
+
 model HealthCheck {
-id        String   @id @default(cuid())
+id        String   @id @default(uuid())
 createdAt DateTime @default(now())
 }
+
+
+
+================================================
+FILE: apps/api/prisma/migrations/migration_lock.toml
+================================================
+# Please do not edit this file manually
+# It should be added in your version-control system (e.g., Git)
+provider = "postgresql"
+
+
+
+================================================
+FILE: apps/api/prisma/migrations/20261028095946_first/migration.sql
+================================================
+-- CreateEnum
+CREATE TYPE "RoomVisibility" AS ENUM ('PRIVATE', 'PUBLIC');
+
+-- CreateEnum
+CREATE TYPE "RoomRole" AS ENUM ('HOST', 'CO_HOST', 'VIEWER');
+
+-- CreateTable
+CREATE TABLE "User" (
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "passwordHash" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "avatarUrl" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "RefreshToken" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "revokedAt" TIMESTAMP(3),
+
+    CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Room" (
+    "id" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "visibility" "RoomVisibility" NOT NULL DEFAULT 'PRIVATE',
+    "hostId" TEXT NOT NULL,
+    "maxMembers" INTEGER NOT NULL DEFAULT 10,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Room_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "RoomMember" (
+    "roomId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "role" "RoomRole" NOT NULL DEFAULT 'VIEWER',
+    "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "RoomMember_pkey" PRIMARY KEY ("roomId","userId")
+);
+
+-- CreateTable
+CREATE TABLE "HealthCheck" (
+    "id" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "HealthCheck_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE INDEX "User_email_idx" ON "User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "RefreshToken_tokenHash_key" ON "RefreshToken"("tokenHash");
+
+-- CreateIndex
+CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
+
+-- CreateIndex
+CREATE INDEX "RefreshToken_expiresAt_idx" ON "RefreshToken"("expiresAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Room_code_key" ON "Room"("code");
+
+-- CreateIndex
+CREATE INDEX "RoomMember_userId_joinedAt_idx" ON "RoomMember"("userId", "joinedAt");
+
+-- AddForeignKey
+ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Room" ADD CONSTRAINT "Room_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RoomMember" ADD CONSTRAINT "RoomMember_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RoomMember" ADD CONSTRAINT "RoomMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 
 
@@ -412,12 +554,12 @@ createdAt DateTime @default(now())
 FILE: apps/api/src/app.ts
 ================================================
 import express from "express";
-
 import { getReadyStatus } from "./infrastructure/ready.js";
 import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { requestLogger } from "./middlewares/req.middleware.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 import authRoutes from "./modules/auth/auth.route.js";
+import roomRoutes from "./modules/room/room.route.js";
 
 export function createApp() {
   const app = express();
@@ -443,7 +585,10 @@ export function createApp() {
       timestamp: new Date().toISOString(),
     });
   });
+
   app.use("/auth", authRoutes);
+  app.use("/rooms", roomRoutes);
+
   app.use(errorMiddleware);
   return app;
 }
@@ -1008,16 +1153,16 @@ export function refreshExpiresAt(): Date {
 FILE: apps/api/src/modules/auth/auth.interface.ts
 ================================================
 import { RefreshToken, User } from "../../generated/prisma/client.js";
-import { AuthUser, SafeUser } from "./auth.types.js";
+import { CreateUserData, SafeUser } from "./auth.types.js";
 
 export interface AuthInterface{
-  createUser(data: AuthUser): Promise<SafeUser>
+  createUser(data: CreateUserData): Promise<SafeUser>
   findById(id:string):Promise<SafeUser|null>
   findByEmail(email: string): Promise<User | null>
   createRefreshToken(data: { userId: string, tokenHash: string, expiresAt: Date }): Promise<RefreshToken>
   findValidRefreshToken(tokenHash: string): Promise<RefreshToken | null>
   revokeRefreshToken(id: string): Promise<RefreshToken | null>
-  revokeAllForUser(userId:string):Promise<{count:number}
+  revokeAllForUser(userId:string):Promise<{count:number}>
 }
 
 
@@ -1027,10 +1172,10 @@ FILE: apps/api/src/modules/auth/auth.repository.ts
 import { RefreshToken, User } from "../../generated/prisma/client.js";
 import { prisma } from "../../infrastructure/prisma.js";
 import { AuthInterface } from "./auth.interface.js";
-import { AuthUser, SafeUser } from "./auth.types.js";
+import { CreateUserData, SafeUser } from "./auth.types.js";
 
 export class AuthRepository implements AuthInterface {
-  async createUser(data: AuthUser): Promise<SafeUser> {
+  async createUser(data: CreateUserData): Promise<SafeUser> {
     return prisma.user.create({
       data,
       select: {
@@ -1072,17 +1217,7 @@ export class AuthRepository implements AuthInterface {
         tokenHash,
         revokedAt: null,
         expiresAt: { gt: new Date() },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            avatarUrl: true,
-          },
-        },
-      },
+      }
     });
   }
   async revokeRefreshToken(id: string): Promise<RefreshToken | null> {
@@ -1161,7 +1296,11 @@ export type RefreshBody = z.infer<typeof RefreshBodySchema>;
 ================================================
 FILE: apps/api/src/modules/auth/auth.service.ts
 ================================================
-import { ConflictError, UnauthorizedError, ValidationError } from "@syncstream/shared-utils";
+import {
+  ConflictError,
+  UnauthorizedError,
+  ValidationError,
+} from "@syncstream/shared-utils";
 import { AuthInterface } from "./auth.interface.js";
 import { LoginBody, RegisterBody } from "./auth.schema.js";
 import bcrypt from "bcryptjs";
@@ -1193,61 +1332,72 @@ export class AuthService {
     return { user, tokens };
   }
   async login(input: LoginBody) {
-    const user = await this.repo.findByEmail(input.email)
+    const user = await this.repo.findByEmail(input.email);
     if (!user) {
       throw new UnauthorizedError("Invalid email or password");
     }
-    const isPasswordValid = await bcrypt.compare(input.password, user.passwordHash)
+    const isPasswordValid = await bcrypt.compare(
+      input.password,
+      user.passwordHash,
+    );
 
     if (!isPasswordValid) {
       throw new UnauthorizedError("Invalid email or password");
     }
-    
+
     const tokens = await this.issueTokens(user.id);
-    return {user,tokens}
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+      },
+      tokens,
+    };
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {
-      if (!refreshToken) {
-        throw new ValidationError("refreshToken is required");
-      }
-  
-      const tokenHash = hashToken(refreshToken);
-      const token = await this.repo.findValidRefreshToken(tokenHash);
-      if (!token) {
-        throw new UnauthorizedError("Invalid or expired refresh token");
-      }
-  
-      // Rotate: revoke old, issue new pair
-      await this.repo.revokeRefreshToken(token.id);
-      return this.issueTokens(token.userId);
-  }  
+    if (!refreshToken) {
+      throw new ValidationError("refreshToken is required");
+    }
+
+    const tokenHash = hashToken(refreshToken);
+    const token = await this.repo.findValidRefreshToken(tokenHash);
+    if (!token) {
+      throw new UnauthorizedError("Invalid or expired refresh token");
+    }
+
+    // Rotate: revoke old, issue new pair
+    await this.repo.revokeRefreshToken(token.id);
+    return this.issueTokens(token.userId);
+  }
 
   async logout(refreshToken: string | undefined): Promise<void> {
-      if (!refreshToken) return;
-      const tokenHash = hashToken(refreshToken);
-      const row = await this.repo.findValidRefreshToken(tokenHash);
-      if (row) {
-        await this.repo.revokeRefreshToken(row.id);
-      }
+    if (!refreshToken) return;
+    const tokenHash = hashToken(refreshToken);
+    const row = await this.repo.findValidRefreshToken(tokenHash);
+    if (row) {
+      await this.repo.revokeRefreshToken(row.id);
     }
-  
-    async logoutAll(userId: string): Promise<void> {
-      await this.repo.revokeAllForUser(userId);
-    }
-  
-    async getMe(userId: string): Promise<SafeUser> {
-      const user = await this.repo.findById(userId);
-      if (!user) {
-        throw new UnauthorizedError("User not found");
-      }
-      return user;
-    }
+  }
 
-    /** Used by HTTP + Socket middleware after JWT verify. */
-      async resolveUser(userId: string): Promise<SafeUser> {
-        return this.getMe(userId);
-      }
+  async logoutAll(userId: string): Promise<void> {
+    await this.repo.revokeAllForUser(userId);
+  }
+
+  async getMe(userId: string): Promise<SafeUser> {
+    const user = await this.repo.findById(userId);
+    if (!user) {
+      throw new UnauthorizedError("User not found");
+    }
+    return user;
+  }
+
+  /** Used by HTTP + Socket middleware after JWT verify. */
+  async resolveUser(userId: string): Promise<SafeUser> {
+    return this.getMe(userId);
+  }
   private async issueTokens(userId: string): Promise<TokenPair> {
     const accessToken = signAccessToken(userId);
     const refreshToken = generateRefreshToken();
@@ -1272,7 +1422,7 @@ export class AuthService {
 ================================================
 FILE: apps/api/src/modules/auth/auth.types.ts
 ================================================
-export type AuthUser = {
+export type CreateUserData = {
   email: string;
   name: string;
   passwordHash: string;
@@ -1294,9 +1444,1011 @@ export type SafeUser = {
 
 
 ================================================
+FILE: apps/api/src/modules/room/room.container.ts
+================================================
+import { RoomRepository } from "./room.repository.js";
+import { RoomService } from "./room.service.js";
+import { roomPresence } from "../../realtime/room-presence.js";
+
+const roomRepository = new RoomRepository();
+export const roomService = new RoomService(roomRepository, roomPresence);
+
+
+================================================
+FILE: apps/api/src/modules/room/room.controller.ts
+================================================
+import { asyncHandler } from "@syncstream/shared-utils";
+import type { Request, Response } from "express";
+import { roomService } from "./room.container.js";
+import type {
+  CreateRoomBody,
+  JoinByCodeBody,
+  JoinByIdBody,
+  RoomIdParams,
+  UpdateRoomBody,
+} from "./room.schema.js";
+
+export const createRoom = asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as CreateRoomBody;
+  const room = await roomService.create(req.user!.id, body);
+  res.status(201).json({
+    success: true,
+    message: "Room created",
+    data: room,
+  });
+});
+
+export const getRoom = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as RoomIdParams;
+  const room = await roomService.getById(id, req.user!.id);
+  res.status(200).json({ success: true, data: room });
+});
+
+export const getRoomMembers = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as RoomIdParams;
+  const members = await roomService.getMembers(id, req.user!.id);
+  res.status(200).json({ success: true, data: members });
+});
+
+export const joinById = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as RoomIdParams;
+  const body = req.body as JoinByIdBody;
+  const result = await roomService.joinById(req.user!.id, id, body);
+  res.status(200).json({
+    success: true,
+    message: result.created ? "Joined room" : "Already a member",
+    data: result,
+  });
+});
+
+export const joinByCode = asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as JoinByCodeBody;
+  const result = await roomService.joinByCode(req.user!.id, body);
+  res.status(200).json({
+    success: true,
+    message: result.created ? "Joined room" : "Already a member",
+    data: result,
+  });
+});
+
+export const leaveRoom = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as RoomIdParams;
+  await roomService.leave(req.user!.id, id);
+  res.status(200).json({ success: true, message: "Left room" });
+});
+
+export const updateRoom = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as RoomIdParams;
+  const body = req.body as UpdateRoomBody;
+  const room = await roomService.update(req.user!.id, id, body);
+  res.status(200).json({ success: true, data: room });
+});
+
+export const deleteRoom = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as RoomIdParams;
+  await roomService.remove(req.user!.id, id);
+  res.status(200).json({ success: true, message: "Room deleted" });
+});
+
+
+================================================
+FILE: apps/api/src/modules/room/room.helper.ts
+================================================
+import crypto from "node:crypto";
+
+/** Unambiguous alphabet (no 0/O, 1/I/L). ~8 chars â‰ˆ 40 bits. */
+const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+export function generateRoomCode(length = 8):string {
+  const bytes = crypto.randomBytes(length)
+  let code = "";
+    for (let i = 0; i < length; i++) {
+      code += ALPHABET[bytes[i]! % ALPHABET.length];
+    }
+    return code;
+}
+export function socketRoomName(roomId: string): string {
+  return `room:${roomId}`;
+}
+
+
+================================================
+FILE: apps/api/src/modules/room/room.interface.ts
+================================================
+import { RoomRole } from "@syncstream/contracts";
+import { CreateRoomInput, MemberRecord, RoomRecord, UpdateRoomInput } from "./room.types.js";
+
+export interface RoomInterface {
+  createRoomWithHost(data: CreateRoomInput): Promise<RoomRecord>;
+
+  findById(id: string): Promise<RoomRecord | null>;
+  findByCode(code: string): Promise<RoomRecord | null>;
+
+  updateRoom(id: string, data: UpdateRoomInput): Promise<RoomRecord>;
+  deleteRoom(id: string): Promise<void>;
+
+  countMembers(roomId: string): Promise<number>;
+  findMembership(
+    roomId: string,
+    userId: string,
+  ): Promise<{
+    userId: string;
+    roomId: string;
+    role: RoomRole;
+    joinedAt: Date;
+  } | null>;
+  listMembers(roomId: string): Promise<MemberRecord[]>
+  /**
+     * Atomic join: if not member, enforce capacity then insert VIEWER.
+     * Returns membership (existing or new) and whether it was newly created.
+     */
+  joinAsViewer(userId: string, roomId: string): Promise<{ membership: { role: RoomRole; joinedAt: Date }; created: boolean }>
+  removeMember(roomId: string, userId: string): Promise<void>;
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/room/room.repository.ts
+================================================
+import {
+  ConflictError,
+  NotFoundError,
+} from "@syncstream/shared-utils";
+import { prisma } from "../../infrastructure/prisma.js";
+import type { RoomInterface } from "./room.interface.js";
+import type {
+  CreateRoomInput,
+  MemberRecord,
+  RoomRecord,
+  UpdateRoomInput,
+} from "./room.types.js";
+import type { RoomRole } from "@syncstream/contracts";
+import { generateRoomCode } from "./room.helper.js";
+
+function toRoomRecord(row: {
+  id: string;
+  code: string;
+  name: string;
+  visibility: string;
+  hostId: string;
+  maxMembers: number;
+  createdAt: Date;
+  updatedAt: Date;
+}): RoomRecord {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    visibility: row.visibility as RoomRecord["visibility"],
+    hostId: row.hostId,
+    maxMembers: row.maxMembers,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export class RoomRepository implements RoomInterface {
+  async createRoomWithHost(data: CreateRoomInput): Promise<RoomRecord> {
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const code = generateRoomCode(8);
+      try {
+        const room = await prisma.$transaction(async (tx) => {
+          const created = await tx.room.create({
+            data: {
+              code,
+              name: data.name,
+              visibility: data.visibility ?? "PRIVATE",
+              hostId: data.hostId,
+              maxMembers: data.maxMembers ?? 10,
+              members: {
+                create: {
+                  userId: data.hostId,
+                  role: "HOST",
+                },
+              },
+            },
+          });
+          return created;
+        });
+        return toRoomRecord(room);
+      } catch (err: unknown) {
+        // Unique violation on code â€” retry
+        const codeConflict =
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code?: string }).code === "P2002";
+        if (codeConflict && attempt < maxAttempts - 1) continue;
+        throw err;
+      }
+    }
+    throw new ConflictError("Could not allocate a unique room code");
+  }
+
+  async findById(id: string): Promise<RoomRecord | null> {
+    const row = await prisma.room.findUnique({ where: { id } });
+    return row ? toRoomRecord(row) : null;
+  }
+
+  async findByCode(code: string): Promise<RoomRecord | null> {
+    const row = await prisma.room.findUnique({
+      where: { code: code.toUpperCase() },
+    });
+    return row ? toRoomRecord(row) : null;
+  }
+
+  async updateRoom(id: string, data: UpdateRoomInput): Promise<RoomRecord> {
+    const row = await prisma.room.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.visibility !== undefined ? { visibility: data.visibility } : {}),
+        ...(data.maxMembers !== undefined ? { maxMembers: data.maxMembers } : {}),
+      },
+    });
+    return toRoomRecord(row);
+  }
+
+  async deleteRoom(id: string): Promise<void> {
+    await prisma.room.delete({ where: { id } });
+  }
+
+  async countMembers(roomId: string): Promise<number> {
+    return prisma.roomMember.count({ where: { roomId } });
+  }
+
+  async findMembership(roomId: string, userId: string) {
+    return prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId } },
+      select: { roomId: true, userId: true, role: true, joinedAt: true },
+    });
+  }
+
+  async listMembers(roomId: string): Promise<MemberRecord[]> {
+    const rows = await prisma.roomMember.findMany({
+      where: { roomId },
+      orderBy: { joinedAt: "asc" },
+      include: {
+        user: {
+          select: { id: true, name: true, avatarUrl: true },
+        },
+      },
+    });
+    return rows.map((r) => ({
+      roomId: r.roomId,
+      userId: r.userId,
+      role: r.role as RoomRole,
+      joinedAt: r.joinedAt,
+      user: r.user,
+    }));
+  }
+
+  async joinAsViewer(
+    roomId: string,
+    userId: string,
+  ): Promise<{ membership: { role: RoomRole; joinedAt: Date }; created: boolean }> {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.roomMember.findUnique({
+        where: { roomId_userId: { roomId, userId } },
+      });
+      if (existing) {
+        return {
+          membership: {
+            role: existing.role as RoomRole,
+            joinedAt: existing.joinedAt,
+          },
+          created: false,
+        };
+      }
+
+      const room = await tx.room.findUnique({ where: { id: roomId } });
+      if (!room) {
+        throw new NotFoundError("Room", roomId);
+      }
+
+      const count = await tx.roomMember.count({ where: { roomId } });
+      if (count >= room.maxMembers) {
+        throw new ConflictError("Room is full");
+      }
+
+      const created = await tx.roomMember.create({
+        data: {
+          roomId,
+          userId,
+          role: "VIEWER",
+        },
+      });
+
+      return {
+        membership: {
+          role: created.role as RoomRole,
+          joinedAt: created.joinedAt,
+        },
+        created: true,
+      };
+    });
+  }
+
+  async removeMember(roomId: string, userId: string): Promise<void> {
+    await prisma.roomMember.delete({
+      where: { roomId_userId: { roomId, userId } },
+    });
+  }
+}
+
+
+================================================
+FILE: apps/api/src/modules/room/room.route.ts
+================================================
+import { Router } from "express";
+import { authenticate } from "../../middlewares/auth.middleware.js";
+import { validate } from "../../middlewares/validate.middleware.js";
+import {
+  CreateRoomBodySchema,
+  JoinByCodeBodySchema,
+  JoinByIdBodySchema,
+  RoomIdParamsSchema,
+  UpdateRoomBodySchema,
+} from "./room.schema.js";
+import {
+  createRoom,
+  deleteRoom,
+  getRoom,
+  getRoomMembers,
+  joinByCode,
+  joinById,
+  leaveRoom,
+  updateRoom,
+} from "./room.controller.js";
+
+const router = Router();
+
+router.use(authenticate);
+
+router.post("/", validate(CreateRoomBodySchema), createRoom);
+router.post("/join", validate(JoinByCodeBodySchema), joinByCode);
+
+router.get(
+  "/:id",
+  validate(RoomIdParamsSchema, "params"),
+  getRoom,
+);
+router.get(
+  "/:id/members",
+  validate(RoomIdParamsSchema, "params"),
+  getRoomMembers,
+);
+router.post(
+  "/:id/join",
+  validate(RoomIdParamsSchema, "params"),
+  validate(JoinByIdBodySchema),
+  joinById,
+);
+router.post(
+  "/:id/leave",
+  validate(RoomIdParamsSchema, "params"),
+  leaveRoom,
+);
+router.patch(
+  "/:id",
+  validate(RoomIdParamsSchema, "params"),
+  validate(UpdateRoomBodySchema),
+  updateRoom,
+);
+router.delete(
+  "/:id",
+  validate(RoomIdParamsSchema, "params"),
+  deleteRoom,
+);
+
+export default router;
+
+
+
+================================================
+FILE: apps/api/src/modules/room/room.schema.ts
+================================================
+import { z } from "zod";
+
+export const CreateRoomBodySchema = z.object({
+  name: z.string().min(1).max(100).trim(),
+  visibility: z.enum(["PRIVATE", "PUBLIC"]).optional().default("PRIVATE"),
+  maxMembers: z.coerce.number().int().min(2).max(50).optional().default(10),
+});
+export type CreateRoomBody = z.infer<typeof CreateRoomBodySchema>;
+
+export const UpdateRoomBodySchema = z
+  .object({
+    name: z.string().min(1).max(100).trim().optional(),
+    visibility: z.enum(["PRIVATE", "PUBLIC"]).optional(),
+    maxMembers: z.coerce.number().int().min(2).max(50).optional(),
+  })
+  .refine((v) => v.name !== undefined || v.visibility !== undefined || v.maxMembers !== undefined, {
+    message: "At least one field is required",
+  });
+export type UpdateRoomBody = z.infer<typeof UpdateRoomBodySchema>;
+
+export const RoomIdParamsSchema = z.object({
+  id: z.uuid(),
+});
+export type RoomIdParams = z.infer<typeof RoomIdParamsSchema>;
+
+export const JoinByCodeBodySchema = z.object({
+  code: z.string().min(4).max(32).transform((c) => c.trim().toUpperCase()),
+});
+export type JoinByCodeBody = z.infer<typeof JoinByCodeBodySchema>;
+
+export const JoinByIdBodySchema = z.object({
+  code: z
+    .string()
+    .min(4)
+    .max(32)
+    .transform((c) => c.trim().toUpperCase())
+    .optional(),
+});
+export type JoinByIdBody = z.infer<typeof JoinByIdBodySchema>;
+
+
+================================================
+FILE: apps/api/src/modules/room/room.service.ts
+================================================
+import { RoomRole } from "@syncstream/contracts";
+import { RoomInterface } from "./room.interface.js";
+import { MemberView, RoomView } from "./room.types.js";
+import { CreateRoomBody, JoinByCodeBody, JoinByIdBody, UpdateRoomBody } from "./room.schema.js";
+import { ForbiddenError, NotFoundError, ValidationError } from "@syncstream/shared-utils";
+
+export type PresencePort = {
+  isOnline(roomId: string, userId: string): boolean;
+  getOnlineUserIds(roomId: string): Set<string>;
+};
+
+export class RoomService {
+  constructor(
+    private readonly repo: RoomInterface,
+    private readonly presence: PresencePort,
+  ) { }
+
+  private toRoomView(
+    room: {
+      id: string;
+      code: string;
+      name: string;
+      visibility: RoomView["visibility"];
+      hostId: string;
+      maxMembers: number;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    memberCount: number,
+    myRole?: RoomRole,
+  ): RoomView {
+    return {
+      id: room.id,
+      code: room.code,
+      name: room.name,
+      visibility: room.visibility,
+      hostId: room.hostId,
+      maxMembers: room.maxMembers,
+      memberCount,
+      createdAt: room.createdAt.toISOString(),
+      updatedAt: room.updatedAt.toISOString(),
+      ...(myRole ? { myRole } : {}),
+    };
+  }
+
+  private toMemberViews(
+    roomId: string,
+    members: Awaited<ReturnType<RoomInterface["listMembers"]>>,
+  ): MemberView[] {
+    return members.map((m) => ({
+      userId: m.userId,
+      name: m.user.name,
+      avatarUrl: m.user.avatarUrl,
+      role: m.role,
+      online: this.presence.isOnline(roomId, m.userId),
+      joinedAt: m.joinedAt.toISOString(),
+    }));
+  }
+
+  async create(hostId: string, body: CreateRoomBody) {
+    const room = await this.repo.createRoomWithHost({
+      hostId,
+      name: body.name,
+      maxMembers: body.maxMembers,
+      visibility: body.visibility,
+    });
+    return this.toRoomView(room, 1, "HOST");
+  }
+  async getById(roomId: string, requesterId: string) {
+    const room = await this.repo.findById(roomId);
+    if (!room) {
+      if (!room) throw new NotFoundError("Room", roomId);
+    }
+    const membership = await this.repo.findMembership(roomId, requesterId);
+    if (!membership) {
+      throw new ForbiddenError("You are not a member of this room");
+    }
+    const count = await this.repo.countMembers(roomId);
+    return this.toRoomView(room, count, membership.role);
+  }
+  async getMembers(roomId: string, requesterId: string): Promise<MemberView[]> {
+    const membership = await this.repo.findMembership(roomId, requesterId);
+    if (!membership) {
+      throw new ForbiddenError("You are not a member of this room");
+    }
+    const members = await this.repo.listMembers(roomId);
+    return this.toMemberViews(roomId, members);
+  }
+
+  /**
+   * Shared join logic for HTTP + sockets.
+   * Private rooms require correct code unless already a member.
+   */
+  async join(
+    userId: string,
+    opts: { roomId?: string; code?: string },
+  ): Promise<{ room: RoomView; members: MemberView[]; created: boolean }> {
+    let room =
+      opts.roomId != null
+        ? await this.repo.findById(opts.roomId)
+        : opts.code != null
+          ? await this.repo.findByCode(opts.code)
+          : null;
+    if (!room && opts.code && opts.roomId) {
+      // join by id + verify code
+      room = await this.repo.findById(opts.roomId);
+    }
+    if (!room) throw new NotFoundError("Room");
+    const existing = await this.repo.findMembership(room.id, userId);
+    
+    if (!existing) {
+      if (room.visibility === "PRIVATE") {
+        const code = opts.code?.toUpperCase();
+        if (!code || code !== room.code) {
+          throw new ForbiddenError("Valid room code required");
+        }
+      }
+      const { membership, created } = await this.repo.joinAsViewer(room.id, userId);
+      const count = await this.repo.countMembers(room.id);
+      const members = this.toMemberViews(room.id, await this.repo.listMembers(room.id));
+      return {
+        room: this.toRoomView(room, count, membership.role),
+        members,
+        created,
+      };
+    }
+    // Already member â€” idempotent (reconnect-friendly)
+        if (
+          room.visibility === "PRIVATE" &&
+          opts.code &&
+          opts.code.toUpperCase() !== room.code
+        ) {
+          // optional: still allow if already member even with wrong code
+        }
+        const count = await this.repo.countMembers(room.id);
+            const members = this.toMemberViews(room.id, await this.repo.listMembers(room.id));
+            return {
+              room: this.toRoomView(room, count, existing.role),
+              members,
+              created: false,
+            };
+  }
+  async joinByCode(userId: string, body: JoinByCodeBody) {
+      return this.join(userId, { code: body.code });
+    }
+  
+    async joinById(userId: string, roomId: string, body: JoinByIdBody) {
+      return this.join(userId, { roomId, code: body.code });
+    }
+
+  async leave(userId: string, roomId: string) {
+    const room = await this.repo.findById(roomId);
+        if (!room) throw new NotFoundError("Room", roomId);
+    
+        const membership = await this.repo.findMembership(roomId, userId);
+        if (!membership) {
+          return; // idempotent
+        }
+        if (membership.role === "HOST") {
+              throw new ForbiddenError(
+                "Host cannot leave; transfer host or delete the room",
+              );
+            }
+        
+       
+
+    await this.repo.removeMember(roomId, userId);
+  }
+
+  async update(roomId:string,userId:string,body:UpdateRoomBody) {
+    const room = await this.repo.findById(roomId);
+        if (!room) throw new NotFoundError("Room", roomId);
+    
+        const membership = await this.repo.findMembership(roomId, userId);
+        if (!membership || membership.role !== "HOST") {
+          throw new ForbiddenError("Only the host can update room settings");
+        }
+        if (body.maxMembers !== undefined) {
+              const count = await this.repo.countMembers(roomId);
+              if (body.maxMembers < count) {
+                throw new ValidationError(
+                  `maxMembers cannot be less than current member count (${count})`,
+                );
+              }
+        }
+        const updated = await this.repo.updateRoom(roomId, body);
+            const count = await this.repo.countMembers(roomId);
+            return this.toRoomView(updated, count, "HOST");
+  }
+  async remove(userId: string, roomId: string) {
+      const room = await this.repo.findById(roomId);
+      if (!room) throw new NotFoundError("Room", roomId);
+  
+      if (room.hostId !== userId) {
+        throw new ForbiddenError("Only the host can delete the room");
+      }
+  
+      await this.repo.deleteRoom(roomId);
+  }
+  /** Used by socket layer after membership is confirmed. */
+    async assertMember(roomId: string, userId: string) {
+      const membership = await this.repo.findMembership(roomId, userId);
+      if (!membership) {
+        throw new ForbiddenError("You are not a member of this room");
+      }
+      return membership;
+    }
+  
+    async buildMemberList(roomId: string): Promise<MemberView[]> {
+      const members = await this.repo.listMembers(roomId);
+      return this.toMemberViews(roomId, members);
+    }
+}  
+
+
+
+================================================
+FILE: apps/api/src/modules/room/room.types.ts
+================================================
+import { RoomRole, RoomVisibility } from "@syncstream/contracts";
+
+export type CreateRoomInput = {
+  name: string;
+  visibility?: RoomVisibility;
+  maxMembers?:number
+  hostId:string
+}
+
+export type UpdateRoomInput = {
+  name?: string;
+  visibility?: RoomVisibility;
+  maxMembers?: number;
+};
+
+export type RoomRecord = {
+  id: string;
+    code: string;
+    name: string;
+    visibility: RoomVisibility;
+    hostId: string;
+    maxMembers: number;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export type MemberRecord = {
+  roomId: string;
+  userId: string;
+  role: RoomRole;
+  joinedAt: Date;
+  user: {
+    id: string;
+        name: string;
+        avatarUrl: string | null;
+    }
+}
+
+export type RoomView = {
+  id: string;
+  code: string;
+  name: string;
+  visibility: RoomVisibility;
+  hostId: string;
+  maxMembers: number;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+  myRole?: RoomRole;
+};
+
+export type MemberView = {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  role: RoomRole;
+  online: boolean;
+  joinedAt: string;
+};
+
+
+================================================
+FILE: apps/api/src/realtime/room-handlers.ts
+================================================
+import type { Server, Socket } from "socket.io";
+import {
+  RoomJoinPayloadSchema,
+  RoomLeavePayloadSchema,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+  type InterServerEvents,
+  type SocketData,
+} from "@syncstream/contracts";
+import { AppError } from "@syncstream/shared-utils";
+import { roomService } from "../modules/room/room.container.js";
+import { socketRoomName } from "../modules/room/room.helper.js";
+import { roomPresence } from "./room-presence.js";
+import { logger } from "../config/logger.js";
+
+type IoServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+type AppSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+function emitRoomError(socket: AppSocket, err: unknown, roomId?: string) {
+  if (err instanceof AppError) {
+    socket.emit("room:error", {
+      code: err.code,
+      message: err.message,
+      roomId,
+    });
+    return;
+  }
+  logger.error({ err }, "room handler error");
+  socket.emit("room:error", {
+    code: "INTERNAL_ERROR",
+    message: "Unexpected room error",
+    roomId,
+  });
+}
+
+export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
+  const user = socket.data.user;
+  if (!user) return;
+
+  socket.on("room:join", async (raw) => {
+    try {
+      const parsed = RoomJoinPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("room:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+
+      const result = await roomService.join(user.id, {
+        roomId: parsed.data.roomId,
+        code: parsed.data.code,
+      });
+
+      const roomId = result.room.id;
+      const channel = socketRoomName(roomId);
+
+      socket.join(channel);
+      roomPresence.add(roomId, user.id, socket.id);
+
+      // Refresh members with presence
+      const members = await roomService.buildMemberList(roomId);
+
+      socket.emit("room:state", {
+        room: result.room,
+        members,
+      });
+
+      socket.emit("room:members", { roomId, members });
+
+      if (result.created) {
+        const me = members.find((m) => m.userId === user.id);
+        if (me) {
+          socket.to(channel).emit("room:member-joined", {
+            roomId,
+            member: me,
+          });
+        }
+        socket.to(channel).emit("room:members", { roomId, members });
+      } else {
+        // Reconnect / second tab: broadcast updated online flags
+        socket.to(channel).emit("room:members", { roomId, members });
+      }
+
+      logger.info("room:join ok", {
+        roomId,
+        userId: user.id,
+        socketId: socket.id,
+        created: result.created,
+      });
+    } catch (err) {
+      emitRoomError(socket, err, typeof raw === "object" && raw && "roomId" in raw
+        ? String((raw as { roomId?: string }).roomId)
+        : undefined);
+    }
+  });
+
+  socket.on("room:leave", async (raw) => {
+    try {
+      const parsed = RoomLeavePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("room:error", {
+          code: "BAD_REQUEST",
+          message: "Invalid leave payload",
+        });
+        return;
+      }
+
+      const { roomId, leaveMembership } = parsed.data;
+      const channel = socketRoomName(roomId);
+
+      socket.leave(channel);
+      const wentOffline = roomPresence.remove(roomId, user.id, socket.id);
+
+      if (leaveMembership) {
+        await roomService.leave(user.id, roomId);
+        io.to(channel).emit("room:member-left", { roomId, userId: user.id });
+      } else if (wentOffline) {
+        // Still a member, but offline
+        const members = await roomService.buildMemberList(roomId);
+        io.to(channel).emit("room:members", { roomId, members });
+      }
+
+      logger.info("room:leave ok", {
+        roomId,
+        userId: user.id,
+        leaveMembership,
+        wentOffline,
+      });
+    } catch (err) {
+      emitRoomError(
+        socket,
+        err,
+        typeof raw === "object" && raw && "roomId" in raw
+          ? String((raw as { roomId?: string }).roomId)
+          : undefined,
+      );
+    }
+  });
+
+  socket.on("disconnect", () => {
+    const changes = roomPresence.removeSocket(socket.id, user.id);
+    for (const { roomId, userWentOffline } of changes) {
+      if (!userWentOffline) continue;
+      void roomService
+        .buildMemberList(roomId)
+        .then((members) => {
+          io.to(socketRoomName(roomId)).emit("room:members", {
+            roomId,
+            members,
+          });
+        })
+        .catch((err) => {
+          logger.warn({ err, roomId }, "failed to broadcast presence on disconnect");
+        });
+    }
+  });
+}
+
+
+================================================
+FILE: apps/api/src/realtime/room-presence.ts
+================================================
+/**
+ * Single-process presence:
+ * roomId â†’ userId â†’ Set<socketId>
+ *
+ * Online = at least one socket for that user in the room.
+ */
+class RoomPresence {
+  private readonly rooms = new Map<string, Map<string, Set<string>>>();
+
+  /** socketId â†’ roomIds (for disconnect cleanup) */
+  private readonly socketRooms = new Map<string, Set<string>>();
+
+  add(roomId: string, userId: string, socketId: string): void {
+    let users = this.rooms.get(roomId);
+    if (!users) {
+      users = new Map();
+      this.rooms.set(roomId, users);
+    }
+    let sockets = users.get(userId);
+    if (!sockets) {
+      sockets = new Set();
+      users.set(userId, sockets);
+    }
+    sockets.add(socketId);
+
+    let sr = this.socketRooms.get(socketId);
+    if (!sr) {
+      sr = new Set();
+      this.socketRooms.set(socketId, sr);
+    }
+    sr.add(roomId);
+  }
+
+  /**
+   * Remove one socket from a room.
+   * @returns true if the user became offline in that room
+   */
+  remove(roomId: string, userId: string, socketId: string): boolean {
+    const users = this.rooms.get(roomId);
+    if (!users) return false;
+
+    const sockets = users.get(userId);
+    if (!sockets) return false;
+
+    sockets.delete(socketId);
+    if (sockets.size === 0) {
+      users.delete(userId);
+      if (users.size === 0) this.rooms.delete(roomId);
+      this.unlinkSocketRoom(socketId, roomId);
+      return true;
+    }
+    this.unlinkSocketRoom(socketId, roomId);
+    return false;
+  }
+
+  /** On disconnect: drop socket from all rooms. Returns rooms where user went offline. */
+  removeSocket(
+    socketId: string,
+    userId: string,
+  ): Array<{ roomId: string; userWentOffline: boolean }> {
+    const roomIds = this.socketRooms.get(socketId);
+    if (!roomIds || roomIds.size === 0) return [];
+
+    const result: Array<{ roomId: string; userWentOffline: boolean }> = [];
+    for (const roomId of [...roomIds]) {
+      const userWentOffline = this.remove(roomId, userId, socketId);
+      result.push({ roomId, userWentOffline });
+    }
+    this.socketRooms.delete(socketId);
+    return result;
+  }
+
+  isOnline(roomId: string, userId: string): boolean {
+    const sockets = this.rooms.get(roomId)?.get(userId);
+    return Boolean(sockets && sockets.size > 0);
+  }
+
+  getOnlineUserIds(roomId: string): Set<string> {
+    const users = this.rooms.get(roomId);
+    if (!users) return new Set();
+    return new Set(users.keys());
+  }
+
+  private unlinkSocketRoom(socketId: string, roomId: string) {
+    const sr = this.socketRooms.get(socketId);
+    if (!sr) return;
+    sr.delete(roomId);
+    if (sr.size === 0) this.socketRooms.delete(socketId);
+  }
+}
+
+export const roomPresence = new RoomPresence();
+
+
+================================================
 FILE: apps/api/src/realtime/socket-auth.ts
 ================================================
-import { Socket } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { verifyAccessToken } from "../modules/auth/auth.helper.js";
 import { authService } from "../modules/auth/auth.container.js";
 import { SafeUser } from "../modules/auth/auth.types.js";
@@ -1324,9 +2476,7 @@ function extractBearer(header: string | string[] | undefined): string | null {
   return header.slice(7).trim() || null;
 }
 
-export function registerSocketAuth(io: {
-  use: (fn: (socket: Socket, next: (err?: Error) => void) => void) => void;
-}) {
+export function registerSocketAuth(io: Server) {
   io.use(async (socket, next) => {
     try {
       const user = await verifySocketIdentity(socket);
@@ -1337,6 +2487,7 @@ export function registerSocketAuth(io: {
         socketId: socket.id,
         error: err instanceof Error ? err.message : String(err),
       });
+
       next(new Error("Unauthorized"));
     }
   });
@@ -1359,6 +2510,7 @@ import { ClientPingSchema } from "@syncstream/contracts";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { registerSocketAuth } from "./socket-auth.js";
+import { registerRoomHandlers } from "./room-handlers.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server<
@@ -1374,7 +2526,6 @@ export function createSocketServer(httpServer: HttpServer) {
     },
   });
 
-  // Reject unauthenticated sockets before connection handlers run
   registerSocketAuth(io);
 
   io.on("connection", (socket) => {
@@ -1402,6 +2553,8 @@ export function createSocketServer(httpServer: HttpServer) {
       });
     });
 
+    registerRoomHandlers(io, socket);
+
     socket.on("disconnect", (reason) => {
       logger.info("Socket disconnected", {
         socketId: socket.id,
@@ -1418,7 +2571,7 @@ export function createSocketServer(httpServer: HttpServer) {
 ================================================
 FILE: apps/api/src/types/express.d.ts
 ================================================
-import { SafeUser } from "../modules/auth/auth.types.ts";
+import type{ SafeUser } from "../modules/auth/auth.types.js";
 
 declare global {
   namespace Express {
@@ -1492,14 +2645,115 @@ export const ClientPingSchema = z.object({
 });
 export type ClientPing = z.infer<typeof ClientPingSchema>;
 
-// â”€â”€â”€ Typed event map (extend in later phases) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+
+// â”€â”€â”€ Room enums / shared â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const RoomVisibilitySchema = z.enum(["PRIVATE", "PUBLIC"])
+export type RoomVisibility = z.infer<typeof RoomVisibilitySchema>
+
+export const RoomRoleSchema = z.enum(["HOST", "CO_HOST", "VIEWER"]);
+export type RoomRole = z.infer<typeof RoomRoleSchema>;
+
+
+
+export const RoomMemberViewSchema = z.object({
+  userId: z.uuid(),
+  name: z.string(),
+  avatarUrl: z.string().nullable(),
+  role: RoomRoleSchema,
+  online: z.boolean(),
+  joinedAt: z.iso.datetime().or(z.string()),
+})
+
+export type RoomMemberView = z.infer<typeof RoomMemberViewSchema>;
+
+export const RoomViewSchema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: z.string(),
+  visibility: RoomVisibilitySchema,
+  hostId: z.uuid(),
+  maxMembers: z.number().int(),
+  memberCount: z.number().int(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  myRole: RoomRoleSchema.optional(),
+});
+export type RoomView = z.infer<typeof RoomViewSchema>;
+
+
+// â”€â”€â”€ Socket: client â†’ server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const RoomJoinPayloadSchema = z
+  .object({
+    roomId: z.uuid().optional(),
+    code: z.string().min(4).max(32).optional(),
+  })
+  .refine((v) => Boolean(v.roomId || v.code), {
+    message: "roomId or code is required",
+  });
+
+export type RoomJoinPayload = z.infer<typeof RoomJoinPayloadSchema>;
+
+
+export const RoomLeavePayloadSchema = z.object({
+  roomId: z.uuid(),
+  /** If true, also remove DB membership (not only socket presence). */
+  leaveMembership: z.boolean().optional().default(false),
+});
+export type RoomLeavePayload = z.infer<typeof RoomLeavePayloadSchema>;
+
+// â”€â”€â”€ Socket: server â†’ client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const RoomMembersPayloadSchema = z.object({
+  roomId: z.uuid(),
+  members: z.array(RoomMemberViewSchema),
+});
+export type RoomMembersPayload = z.infer<typeof RoomMembersPayloadSchema>;
+
+
+export const RoomStatePayloadSchema = z.object({
+  room: RoomViewSchema,
+  members: z.array(RoomMemberViewSchema),
+});
+export type RoomStatePayload = z.infer<typeof RoomStatePayloadSchema>;
+
+
+export const RoomErrorPayloadSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  roomId: z.uuid().optional(),
+});
+export type RoomErrorPayload = z.infer<typeof RoomErrorPayloadSchema>;
+
+
+export const RoomMemberJoinedPayloadSchema = z.object({
+  roomId: z.uuid(),
+  member: RoomMemberViewSchema,
+});
+export type RoomMemberJoinedPayload = z.infer<typeof RoomMemberJoinedPayloadSchema>;
+
+export const RoomMemberLeftPayloadSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+});
+export type RoomMemberLeftPayload = z.infer<typeof RoomMemberLeftPayloadSchema>;
+
+
+// â”€â”€â”€ Typed event map  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServerToClientEvents {
   "server:hello": (payload: ServerHello) => void;
   "server:pong": (payload: { serverTime: number; clientTime: number }) => void;
+  "room:state": (payload: RoomStatePayload) => void;
+    "room:members": (payload: RoomMembersPayload) => void;
+    "room:member-joined": (payload: RoomMemberJoinedPayload) => void;
+    "room:member-left": (payload: RoomMemberLeftPayload) => void;
+    "room:error": (payload: RoomErrorPayload) => void;
 }
 
 export interface ClientToServerEvents {
   "client:ping": (payload: ClientPing) => void;
+  "room:join": (payload: RoomJoinPayload) => void;
+    "room:leave": (payload: RoomLeavePayload) => void;
 }
 
 export interface InterServerEvents {}

@@ -7,6 +7,16 @@ datasource db {
   provider = "postgresql"
 }
 
+enum RoomVisibility{
+PRIVATE
+PUBLIC
+}
+enum RoomRole{
+HOST
+CO_HOST
+VIEWER  
+}
+
 model User{
 id                   String   @id @default(uuid())
 email                String    @unique
@@ -17,6 +27,8 @@ createdAt    DateTime       @default(now())
 updatedAt    DateTime       @updatedAt
 
 refreshTokens RefreshToken[]
+hostedRooms  Room[]         @relation("RoomHost")
+memberships  RoomMember[]
 @@index([email])
 }
 
@@ -30,8 +42,47 @@ revokedAt DateTime?
 
 user       User    @relation(fields:[userId],references:[id],onDelete:Cascade)
 @@index([userId])
-  @@index([expiresAt])
+@@index([expiresAt])
 }
+
+model Room{
+id                    String       @id @default(uuid())
+code                   String       @unique
+name                    String
+visibility               RoomVisibility    @default(PRIVATE)
+hostId                    String
+maxMembers                 Int          @default(10)
+createdAt  DateTime       @default(now())
+updatedAt  DateTime       @updatedAt
+
+
+host            User          @relation("RoomHost",fields:[hostId],references:[id],onDelete:Cascade)
+members         RoomMember[]
+
+}
+
+model RoomMember{
+roomId           String
+userId            String
+role              RoomRole   @default(VIEWER)
+joinedAt          DateTime    @default(now())
+
+room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+@@id([roomId, userId])
+@@index([userId, joinedAt])
+
+}
+
+
+
+
+
+
+
+
+
 model HealthCheck {
 id        String   @id @default(uuid())
 createdAt DateTime @default(now())
