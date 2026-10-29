@@ -11,6 +11,7 @@ import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { registerSocketAuth } from "./socket-auth.js";
 import { registerRoomHandlers } from "./room-handlers.js";
+import { registerPlaybackHandlers } from "./playback-handlers.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server<
@@ -54,6 +55,7 @@ export function createSocketServer(httpServer: HttpServer) {
     });
 
     registerRoomHandlers(io, socket);
+    registerPlaybackHandlers(io, socket);   
 
     socket.on("disconnect", (reason) => {
       logger.info("Socket disconnected", {

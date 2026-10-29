@@ -3,6 +3,7 @@ import { RoomInterface } from "./room.interface.js";
 import { MemberView, RoomView } from "./room.types.js";
 import { CreateRoomBody, JoinByCodeBody, JoinByIdBody, UpdateRoomBody } from "./room.schema.js";
 import { ForbiddenError, NotFoundError, ValidationError } from "@syncstream/shared-utils";
+import { playbackService } from "../playback/playback.container.js";
 
 export type PresencePort = {
   isOnline(roomId: string, userId: string): boolean;
@@ -195,7 +196,8 @@ export class RoomService {
         throw new ForbiddenError("Only the host can delete the room");
       }
   
-      await this.repo.deleteRoom(roomId);
+    await this.repo.deleteRoom(roomId);
+    playbackService.clearRoom(roomId);
   }
   /** Used by socket layer after membership is confirmed. */
     async assertMember(roomId: string, userId: string) {

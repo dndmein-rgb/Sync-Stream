@@ -12,6 +12,7 @@ import { roomService } from "../modules/room/room.container.js";
 import { socketRoomName } from "../modules/room/room.helper.js";
 import { roomPresence } from "./room-presence.js";
 import { logger } from "../config/logger.js";
+import { playbackService } from "../modules/playback/playback.container.js";
 
 type IoServer = Server<
   ClientToServerEvents,
@@ -35,7 +36,7 @@ function emitRoomError(socket: AppSocket, err: unknown, roomId?: string) {
     });
     return;
   }
-  logger.error({ err }, "room handler error");
+  logger.error( "room handler error",{ err });
   socket.emit("room:error", {
     code: "INTERNAL_ERROR",
     message: "Unexpected room error",
@@ -78,7 +79,13 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
       });
 
       socket.emit("room:members", { roomId, members });
-
+      const playbackState = playbackService.getState(roomId);
+            if (playbackState) {
+              socket.emit("playback:snapshot", {
+                roomId,
+                state: playbackState,
+              });
+            }
       if (result.created) {
         const me = members.find((m) => m.userId === user.id);
         if (me) {

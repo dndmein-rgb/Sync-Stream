@@ -201,17 +201,28 @@ export type PlaybackErrorPayload = z.infer<typeof PlaybackErrorPayloadSchema>;
 export interface ServerToClientEvents {
   "server:hello": (payload: ServerHello) => void;
   "server:pong": (payload: { serverTime: number; clientTime: number }) => void;
-  "room:state": (payload: RoomStatePayload) => void;
+  // rooms
+    "room:state": (payload: RoomStatePayload) => void;
     "room:members": (payload: RoomMembersPayload) => void;
     "room:member-joined": (payload: RoomMemberJoinedPayload) => void;
     "room:member-left": (payload: RoomMemberLeftPayload) => void;
     "room:error": (payload: RoomErrorPayload) => void;
+  
+    // playback (Phase 3)
+    "playback:state": (payload: PlaybackStatePayload) => void;
+    "playback:snapshot": (payload: PlaybackSnapshotPayload) => void;
+    "playback:error": (payload: PlaybackErrorPayload) => void;
 }
 
 export interface ClientToServerEvents {
   "client:ping": (payload: ClientPing) => void;
-  "room:join": (payload: RoomJoinPayload) => void;
+  // rooms
+    "room:join": (payload: RoomJoinPayload) => void;
     "room:leave": (payload: RoomLeavePayload) => void;
+  
+    // playback (Phase 3)
+    "playback:command": (payload: PlaybackCommand) => void;
+    "playback:sync": (payload: PlaybackSyncPayload) => void;
 }
 
 export interface InterServerEvents {}
