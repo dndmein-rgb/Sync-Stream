@@ -29,6 +29,8 @@ updatedAt    DateTime       @updatedAt
 refreshTokens RefreshToken[]
 hostedRooms  Room[]         @relation("RoomHost")
 memberships  RoomMember[]
+chatMessages     ChatMessage[]
+
 @@index([email])
 }
 
@@ -58,6 +60,7 @@ updatedAt  DateTime       @updatedAt
 
 host            User          @relation("RoomHost",fields:[hostId],references:[id],onDelete:Cascade)
 members         RoomMember[]
+chatMessages     ChatMessage[]
 
 }
 
@@ -75,6 +78,20 @@ user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
 }
 
+
+model ChatMessage{
+id          String         @id @default(uuid())
+roomId       String
+userId        String
+content         String
+createdAt        DateTime    @default(now())
+
+room           Room    @relation(fields:[roomId],references:[id],onDelete:Cascade)
+user            User    @relation(fields:[userId],references:[id],onDelete:Cascade)
+
+@@index([roomId, createdAt])
+@@index([userId])
+}
 
 
 

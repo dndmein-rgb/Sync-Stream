@@ -14,17 +14,13 @@ export const ClientPingSchema = z.object({
 });
 export type ClientPing = z.infer<typeof ClientPingSchema>;
 
-
-
 // ─── Room enums / shared ────────────────────────────────────────────
 
-export const RoomVisibilitySchema = z.enum(["PRIVATE", "PUBLIC"])
-export type RoomVisibility = z.infer<typeof RoomVisibilitySchema>
+export const RoomVisibilitySchema = z.enum(["PRIVATE", "PUBLIC"]);
+export type RoomVisibility = z.infer<typeof RoomVisibilitySchema>;
 
 export const RoomRoleSchema = z.enum(["HOST", "CO_HOST", "VIEWER"]);
 export type RoomRole = z.infer<typeof RoomRoleSchema>;
-
-
 
 export const RoomMemberViewSchema = z.object({
   userId: z.uuid(),
@@ -33,7 +29,7 @@ export const RoomMemberViewSchema = z.object({
   role: RoomRoleSchema,
   online: z.boolean(),
   joinedAt: z.iso.datetime().or(z.string()),
-})
+});
 
 export type RoomMemberView = z.infer<typeof RoomMemberViewSchema>;
 
@@ -51,7 +47,6 @@ export const RoomViewSchema = z.object({
 });
 export type RoomView = z.infer<typeof RoomViewSchema>;
 
-
 // ─── Socket: client → server ────────────────────────────────────────
 export const RoomJoinPayloadSchema = z
   .object({
@@ -63,7 +58,6 @@ export const RoomJoinPayloadSchema = z
   });
 
 export type RoomJoinPayload = z.infer<typeof RoomJoinPayloadSchema>;
-
 
 export const RoomLeavePayloadSchema = z.object({
   roomId: z.uuid(),
@@ -79,13 +73,11 @@ export const RoomMembersPayloadSchema = z.object({
 });
 export type RoomMembersPayload = z.infer<typeof RoomMembersPayloadSchema>;
 
-
 export const RoomStatePayloadSchema = z.object({
   room: RoomViewSchema,
   members: z.array(RoomMemberViewSchema),
 });
 export type RoomStatePayload = z.infer<typeof RoomStatePayloadSchema>;
-
 
 export const RoomErrorPayloadSchema = z.object({
   code: z.string(),
@@ -94,12 +86,13 @@ export const RoomErrorPayloadSchema = z.object({
 });
 export type RoomErrorPayload = z.infer<typeof RoomErrorPayloadSchema>;
 
-
 export const RoomMemberJoinedPayloadSchema = z.object({
   roomId: z.uuid(),
   member: RoomMemberViewSchema,
 });
-export type RoomMemberJoinedPayload = z.infer<typeof RoomMemberJoinedPayloadSchema>;
+export type RoomMemberJoinedPayload = z.infer<
+  typeof RoomMemberJoinedPayloadSchema
+>;
 
 export const RoomMemberLeftPayloadSchema = z.object({
   roomId: z.uuid(),
@@ -116,14 +109,14 @@ export type RoomMemberLeftPayload = z.infer<typeof RoomMemberLeftPayloadSchema>;
  * Clients never invent this; they only apply what the server broadcasts.
  */
 
-export const PlaybackStatusSchema = z.enum(["PLAYING", "PAUSED"])
+export const PlaybackStatusSchema = z.enum(["PLAYING", "PAUSED"]);
 export type PlaybackStatus = z.infer<typeof PlaybackStatusSchema>;
 
 export const PlaybackStateSchema = z.object({
-  videoId: z.string().min(1),          // for now a direct URL or simple asset id
+  videoId: z.string().min(1), // for now a direct URL or simple asset id
   status: PlaybackStatusSchema,
-  position: z.number().min(0),         // seconds at the moment of updatedAt
-  updatedAt: z.number().int(),         // server timestamp in ms
+  position: z.number().min(0), // seconds at the moment of updatedAt
+  updatedAt: z.number().int(), // server timestamp in ms
   playbackRate: z.number().positive().default(1),
   sequence: z.number().int().nonnegative(),
 });
@@ -146,9 +139,9 @@ export const PlaybackCommandSchema = z
   .object({
     roomId: z.uuid(),
     action: PlaybackActionSchema,
-    position: z.number().min(0).optional(),   // required for SEEK, optional for PLAY
-    videoId: z.string().min(1).optional(),    // required for CHANGE_VIDEO
-    commandId: z.uuid(),             // client-generated, used for dedup
+    position: z.number().min(0).optional(), // required for SEEK, optional for PLAY
+    videoId: z.string().min(1).optional(), // required for CHANGE_VIDEO
+    commandId: z.uuid(), // client-generated, used for dedup
   })
   .superRefine((val, ctx) => {
     if (val.action === "SEEK" && val.position === undefined) {
@@ -186,7 +179,9 @@ export const PlaybackSnapshotPayloadSchema = z.object({
   roomId: z.uuid(),
   state: PlaybackStateSchema,
 });
-export type PlaybackSnapshotPayload = z.infer<typeof PlaybackSnapshotPayloadSchema>;
+export type PlaybackSnapshotPayload = z.infer<
+  typeof PlaybackSnapshotPayloadSchema
+>;
 
 /** Server → client: command rejected or other playback error. */
 export const PlaybackErrorPayloadSchema = z.object({
@@ -197,41 +192,127 @@ export const PlaybackErrorPayloadSchema = z.object({
 });
 export type PlaybackErrorPayload = z.infer<typeof PlaybackErrorPayloadSchema>;
 
+// ─── Phase 4 – Chat ─────────────────────────────────────────────────────────
+export const ChatSendPayloadSchema = z.object({
+  roomId: z.uuid(),
+  content: z.string().min(1).max(2000).trim(),
+  clientMessageId: z.uuid().optional(), // optional client dedup key
+});
+export type ChatSendPayload = z.infer<typeof ChatSendPayloadSchema>;
+
+export const ChatMessageViewSchema = z.object({
+  id: z.uuid(),
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  avatarUrl: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(), // ISO
+  clientMessageId: z.uuid().optional(),
+});
+export type ChatMessageView = z.infer<typeof ChatMessageViewSchema>;
+
+export const ChatHistoryPayloadSchema = z.object({
+  roomId: z.uuid(),
+  /** cursor = createdAt ISO of the oldest message you already have; omit for latest */
+  cursor: z.string().optional(),
+  limit: z.number().int().min(1).max(100).optional().default(50),
+});
+export type ChatHistoryPayload = z.infer<typeof ChatHistoryPayloadSchema>;
+
+export const ChatHistoryResultSchema = z.object({
+  roomId: z.uuid(),
+  messages: z.array(ChatMessageViewSchema),
+  nextCursor: z.string().nullable(), // null = no older messages
+});
+export type ChatHistoryResult = z.infer<typeof ChatHistoryResultSchema>;
+
+export const ChatErrorPayloadSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  roomId: z.uuid().optional(),
+  clientMessageId: z.uuid().optional(),
+});
+export type ChatErrorPayload = z.infer<typeof ChatErrorPayloadSchema>;
+
+// ─── Reactions (ephemeral) ──────────────────────────────────────────────────
+
+export const ReactionPayloadSchema = z.object({
+  roomId: z.uuid(),
+  emoji: z.string().min(1).max(32), // "🔥", "😂", etc.
+});
+export type ReactionPayload = z.infer<typeof ReactionPayloadSchema>;
+
+export const ReactionBroadcastSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  emoji: z.string(),
+  at: z.number().int(), // server time ms
+});
+export type ReactionBroadcast = z.infer<typeof ReactionBroadcastSchema>;
+
+// ─── Typing (ephemeral) ─────────────────────────────────────────────────────
+
+export const TypingPayloadSchema = z.object({
+  roomId: z.uuid(),
+  isTyping: z.boolean(),
+});
+export type TypingPayload = z.infer<typeof TypingPayloadSchema>;
+
+export const TypingBroadcastSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  isTyping: z.boolean(),
+});
+export type TypingBroadcast = z.infer<typeof TypingBroadcastSchema>;
+
 // ─── Typed event map  ────────────────────────────────
 export interface ServerToClientEvents {
   "server:hello": (payload: ServerHello) => void;
   "server:pong": (payload: { serverTime: number; clientTime: number }) => void;
   // rooms
-    "room:state": (payload: RoomStatePayload) => void;
-    "room:members": (payload: RoomMembersPayload) => void;
-    "room:member-joined": (payload: RoomMemberJoinedPayload) => void;
-    "room:member-left": (payload: RoomMemberLeftPayload) => void;
-    "room:error": (payload: RoomErrorPayload) => void;
-  
-    // playback (Phase 3)
-    "playback:state": (payload: PlaybackStatePayload) => void;
-    "playback:snapshot": (payload: PlaybackSnapshotPayload) => void;
-    "playback:error": (payload: PlaybackErrorPayload) => void;
+  "room:state": (payload: RoomStatePayload) => void;
+  "room:members": (payload: RoomMembersPayload) => void;
+  "room:member-joined": (payload: RoomMemberJoinedPayload) => void;
+  "room:member-left": (payload: RoomMemberLeftPayload) => void;
+  "room:error": (payload: RoomErrorPayload) => void;
+  "chat:message": (payload: ChatMessageView) => void;
+  "chat:history": (payload: ChatHistoryResult) => void;
+  "chat:error": (payload: ChatErrorPayload) => void;
+  "reaction:new": (payload: ReactionBroadcast) => void;
+  "typing:update": (payload: TypingBroadcast) => void;
+
+  // playback (Phase 3)
+  "playback:state": (payload: PlaybackStatePayload) => void;
+  "playback:snapshot": (payload: PlaybackSnapshotPayload) => void;
+  "playback:error": (payload: PlaybackErrorPayload) => void;
 }
 
 export interface ClientToServerEvents {
   "client:ping": (payload: ClientPing) => void;
   // rooms
-    "room:join": (payload: RoomJoinPayload) => void;
-    "room:leave": (payload: RoomLeavePayload) => void;
-  
-    // playback (Phase 3)
-    "playback:command": (payload: PlaybackCommand) => void;
-    "playback:sync": (payload: PlaybackSyncPayload) => void;
+  "room:join": (payload: RoomJoinPayload) => void;
+  "room:leave": (payload: RoomLeavePayload) => void;
+
+  // playback (Phase 3)
+  "playback:command": (payload: PlaybackCommand) => void;
+  "playback:sync": (payload: PlaybackSyncPayload) => void;
+
+  "chat:send": (payload: ChatSendPayload) => void;
+  "chat:history": (payload: ChatHistoryPayload) => void;
+  "reaction:send": (payload: ReactionPayload) => void;
+  "typing:update": (payload: TypingPayload) => void;
 }
 
 export interface InterServerEvents {}
 
-export interface SocketData{
+export interface SocketData {
   user?: {
     id: string;
     email: string;
     name: string;
-    avatarUrl:string|null
-  }
+    avatarUrl: string | null;
+  };
 }

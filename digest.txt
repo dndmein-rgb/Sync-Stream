@@ -3,11 +3,13 @@ Directory structure:
     ├── docker-compose.yml
     ├── package.json
     ├── tsconfig.base.json
+    ├── .env.example
     ├── apps/
     │   └── api/
     │       ├── package.json
     │       ├── prisma.config.ts
     │       ├── tsconfig.json
+    │       ├── .env.example
     │       ├── prisma/
     │       │   ├── schema.prisma
     │       │   └── migrations/
@@ -40,6 +42,16 @@ Directory structure:
     │           │   │   ├── auth.schema.ts
     │           │   │   ├── auth.service.ts
     │           │   │   └── auth.types.ts
+    │           │   ├── chat/
+    │           │   │   ├── chat.container.ts
+    │           │   │   ├── chat.interface.ts
+    │           │   │   ├── chat.repository.ts
+    │           │   │   ├── chat.service.ts
+    │           │   │   └── chat.types.ts
+    │           │   ├── playback/
+    │           │   │   ├── playback.container.ts
+    │           │   │   ├── playback.service.ts
+    │           │   │   └── playback.types.ts
     │           │   └── room/
     │           │       ├── room.container.ts
     │           │       ├── room.controller.ts
@@ -51,6 +63,8 @@ Directory structure:
     │           │       ├── room.service.ts
     │           │       └── room.types.ts
     │           ├── realtime/
+    │           │   ├── chat-handlers.ts
+    │           │   ├── playback-handlers.ts
     │           │   ├── room-handlers.ts
     │           │   ├── room-presence.ts
     │           │   ├── socket-auth.ts
@@ -268,6 +282,29 @@ FILE: tsconfig.base.json
 
 
 ================================================
+FILE: .env.example
+================================================
+NODE_ENV=development
+PORT=4000
+LOG_LEVEL=info
+
+# Database
+DATABASE_URL=postgresql://syncstream:syncstream@localhost:5433/syncstream?schema=public
+
+# CORS â€” comma-separated origins
+CLIENT_ORIGINS=http://localhost:3000
+
+# Socket.IO
+SOCKET_PATH=/socket.io
+
+JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
+JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+BCRYPT_ROUNDS=12
+
+
+================================================
 FILE: apps/api/package.json
 ================================================
 {
@@ -346,6 +383,22 @@ FILE: apps/api/tsconfig.json
 
 
 ================================================
+FILE: apps/api/.env.example
+================================================
+NODE_ENV=development
+PORT=4000
+LOG_LEVEL=info
+DATABASE_URL=postgresql://syncstream:syncstream@localhost:5433/syncstream?schema=public
+CLIENT_ORIGINS=http://localhost:3000
+SOCKET_PATH=/socket.io
+JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
+JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+BCRYPT_ROUNDS=12
+
+
+================================================
 FILE: apps/api/prisma/schema.prisma
 ================================================
 generator client {
@@ -379,6 +432,8 @@ updatedAt    DateTime       @updatedAt
 refreshTokens RefreshToken[]
 hostedRooms  Room[]         @relation("RoomHost")
 memberships  RoomMember[]
+chatMessages     ChatMessage[]
+
 @@index([email])
 }
 
@@ -408,6 +463,7 @@ updatedAt  DateTime       @updatedAt
 
 host            User          @relation("RoomHost",fields:[hostId],references:[id],onDelete:Cascade)
 members         RoomMember[]
+chatMessages     ChatMessage[]
 
 }
 
@@ -425,6 +481,20 @@ user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
 }
 
+
+model ChatMessage{
+id          String         @id @default(uuid())
+roomId       String
+userId        String
+content         String
+createdAt        DateTime    @default(now())
+
+room           Room    @relation(fields:[roomId],references:[id],onDelete:Cascade)
+user            User    @relation(fields:[userId],references:[id],onDelete:Cascade)
+
+@@index([roomId, createdAt])
+@@index([userId])
+}
 
 
 
@@ -1444,6 +1514,327 @@ export type SafeUser = {
 
 
 ================================================
+FILE: apps/api/src/modules/chat/chat.container.ts
+================================================
+import { ChatRepository } from "./chat.repository.js";
+import { ChatService } from "./chat.service.js";
+import { RoomRepository } from "../room/room.repository.js";
+
+const chatRepository = new ChatRepository();
+const roomRepository = new RoomRepository(); 
+
+export const chatService = new ChatService(chatRepository, roomRepository);
+
+
+================================================
+FILE: apps/api/src/modules/chat/chat.interface.ts
+================================================
+import type { CreateMessageInput, MessageRecord } from "./chat.types.js";
+
+export interface ChatInterface {
+  create(data: CreateMessageInput): Promise<MessageRecord>;
+  /**
+   * Newest-first page. If `cursor` is set, return messages strictly older than it.
+   */
+  listByRoom(
+    roomId: string,
+    opts: { cursor?: string; limit: number },
+  ): Promise<MessageRecord[]>;
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/chat/chat.repository.ts
+================================================
+import { prisma } from "../../infrastructure/prisma.js";
+import { ChatInterface } from "./chat.interface.js";
+import { CreateMessageInput, MessageRecord } from "./chat.types.js";
+
+export class ChatRepository implements ChatInterface {
+  async create(data: CreateMessageInput): Promise<MessageRecord> {
+    return prisma.chatMessage.create({
+      data: {
+        content: data.content,
+        roomId: data.roomId,
+        userId: data.userId,
+      },
+      include: {
+        user: {
+          select: {
+            avatarUrl: true,
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+  async listByRoom(
+    roomId: string,
+    opts: { cursor?: string; limit: number },
+  ): Promise<MessageRecord[]> {
+    return prisma.chatMessage.findMany({
+      where: {
+        roomId,
+        ...(opts.cursor ? { createdAt: { lt: new Date(opts.cursor) } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: opts.limit,
+      include: {
+        user: { select: { id: true, name: true, avatarUrl: true } },
+      },
+    });
+  }
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/chat/chat.service.ts
+================================================
+Error reading file with 'cp1252': 'charmap' codec can't decode byte 0x9d in position 2185: character maps to <undefined>
+
+
+================================================
+FILE: apps/api/src/modules/chat/chat.types.ts
+================================================
+export type CreateMessageInput = {
+  roomId: string;
+  userId: string;
+  content:string
+}
+
+export type MessageRecord = {
+  id: string;
+  roomId: string;
+  userId: string;
+  content: string;
+  createdAt: Date;
+  user: {
+    id: string;
+    name:  string;
+    avatarUrl:string|null
+  }
+  
+}
+
+export type MessageView={
+  id: string;
+  roomId: string;
+  userId: string;
+  name: string;
+    avatarUrl: string | null;
+    content: string;
+    createdAt: string;
+    clientMessageId?: string;
+}
+
+
+================================================
+FILE: apps/api/src/modules/playback/playback.container.ts
+================================================
+import { PlaybackService } from "./playback.service.js";
+
+export const playbackService = new PlaybackService();
+
+
+================================================
+FILE: apps/api/src/modules/playback/playback.service.ts
+================================================
+import {
+  PlaybackCommand,
+  PlaybackState,
+  RoomRole,
+} from "@syncstream/contracts";
+import { RoomPlayback } from "./playback.types.js";
+import { ForbiddenError, ValidationError } from "@syncstream/shared-utils";
+
+const MAX_RECENT_COMMANDS = 64; // per room â€“ enough to stop network retries
+
+/**
+ * Single-process authoritative playback state.
+ * Key = roomId.
+ *
+ * Later (Phase 6) this Map moves behind Redis + Lua, but the public API
+ * of the service stays the same.
+ */
+
+export class PlaybackService {
+  private readonly states = new Map<string, RoomPlayback>();
+  /** roomId â†’ recent commandIds (for deduplication) */
+  private readonly recentCommands = new Map<string, Set<string>>();
+
+  /** Returns current state or null if the room has never selected a video. */
+  getState(roomId: string): PlaybackState | null {
+    const s = this.states.get(roomId);
+    return s ? { ...s } : null;
+  }
+
+  /**
+   * Apply a host/co-host command.
+   * Throws AppError subclasses on validation / permission failure.
+   */
+  applyCommand(
+    roomId: string,
+    userId: string,
+    role: RoomRole,
+    cmd: PlaybackCommand,
+  ) {
+    // 1. Permission
+    if (role !== "HOST" && role !== "CO_HOST") {
+      throw new ForbiddenError("Only host or co-host can control playback");
+    }
+    // 2. Deduplication
+    if (this.isDuplicate(roomId, cmd.commandId)) {
+      const current = this.states.get(roomId);
+      if (!current) {
+        // very unlikely â€“ command was accepted earlier but state gone
+        throw new ValidationError("Duplicate command but no state exists");
+      }
+      return { state: { ...current }, duplicate: true };
+    }
+    const now = Date.now();
+    let current = this.states.get(roomId);
+
+    // 3. State transition
+    let next: RoomPlayback;
+    switch (cmd.action) {
+      case "CHANGE_VIDEO": {
+        if (!cmd.videoId) {
+          throw new ValidationError("videoId is required for CHANGE_VIDEO");
+        }
+
+        next = {
+          videoId: cmd.videoId,
+          status: "PAUSED",
+          position: 0,
+          updatedAt: now,
+          playbackRate: 1,
+          sequence: current ? current.sequence + 1 : 1,
+        };
+        break;
+      }
+      case "PLAY": {
+        if (!current) {
+          throw new ValidationError("No video selected â€“ CHANGE_VIDEO first");
+        }
+        // If already playing we still accept the command (idempotent) but
+        // re-anchor the position so late clients stay in sync.
+        const position =
+          cmd.position !== undefined
+            ? cmd.position
+            : this.expectedPosition(current, now);
+        next = {
+          ...current,
+          status: "PLAYING",
+          position,
+          updatedAt: now,
+          sequence: current.sequence + 1,
+        };
+        break;
+      }
+      case "PAUSE": {
+        if (!current) {
+          throw new ValidationError("No video selected â€“ CHANGE_VIDEO first");
+        }
+        const position = this.expectedPosition(current, now);
+        next = {
+          ...current,
+          status: "PAUSED",
+          position,
+          updatedAt: now,
+          sequence: current.sequence + 1,
+        };
+        break;
+      }
+      case "SEEK": {
+        if (!current) {
+          throw new ValidationError("No video selected â€“ CHANGE_VIDEO first");
+        }
+        if (cmd.position === undefined) {
+          throw new ValidationError("position is required for SEEK");
+        }
+        if (cmd.position < 0) {
+          throw new ValidationError("position cannot be negative");
+        }
+        next = {
+          ...current,
+          position: cmd.position,
+          updatedAt: now,
+          sequence: current.sequence + 1,
+          // keep current status (playing or paused)
+        };
+        break;
+      }
+      default: {
+        // exhaustive check
+        const _exhaustive: never = cmd.action;
+        throw new ValidationError(`Unknown action: ${_exhaustive}`);
+      }
+    }
+    // 4. Persist + remember commandId
+    this.states.set(roomId, next);
+    this.rememberCommand(roomId, cmd.commandId);
+
+    return { state: { ...next }, duplicate: false };
+  }
+  /** Remove state when a room is deleted (called from room service later). */
+  clearRoom(roomId: string): void {
+    this.states.delete(roomId);
+    this.recentCommands.delete(roomId);
+  }
+
+  // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /**
+   * Expected playback position at time `now` according to the formula:
+   *   PLAYING â†’ position + rate * (now - updatedAt) / 1000
+   *   PAUSED  â†’ position
+   */
+  expectedPosition(state: PlaybackState, now: number): number {
+    if (state.status === "PAUSED") return state.position;
+    const elapsedSec = (now - state.updatedAt) / 1000;
+    return Math.max(0, state.position + state.playbackRate * elapsedSec);
+  }
+  private isDuplicate(roomId: string, commandId: string): boolean {
+    const set = this.recentCommands.get(roomId);
+    return set ? set.has(commandId) : false;
+  }
+  private rememberCommand(roomId: string, commandId: string): void {
+    let set = this.recentCommands.get(roomId);
+    if (!set) {
+      set = new Set();
+      this.recentCommands.set(roomId, set);
+    }
+    set.add(commandId);
+    // simple bound â€“ drop oldest when over limit (Set iteration order is insertion order)
+    if (set.size > MAX_RECENT_COMMANDS) {
+      const first = set.values().next().value;
+      if (first !== undefined) set.delete(first);
+    }
+  }
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/playback/playback.types.ts
+================================================
+import type { PlaybackState } from "@syncstream/contracts";
+
+/** Internal mutable record kept by the service. */
+export type RoomPlayback = PlaybackState;
+
+/** Result returned after a successful command. */
+export type ApplyCommandResult = {
+  state: PlaybackState;
+  /** true when this command was a no-op (duplicate commandId) */
+  duplicate: boolean;
+};
+
+
+================================================
 FILE: apps/api/src/modules/room/room.container.ts
 ================================================
 import { RoomRepository } from "./room.repository.js";
@@ -1899,6 +2290,7 @@ import { RoomInterface } from "./room.interface.js";
 import { MemberView, RoomView } from "./room.types.js";
 import { CreateRoomBody, JoinByCodeBody, JoinByIdBody, UpdateRoomBody } from "./room.schema.js";
 import { ForbiddenError, NotFoundError, ValidationError } from "@syncstream/shared-utils";
+import { playbackService } from "../playback/playback.container.js";
 
 export type PresencePort = {
   isOnline(roomId: string, userId: string): boolean;
@@ -2091,7 +2483,8 @@ export class RoomService {
         throw new ForbiddenError("Only the host can delete the room");
       }
   
-      await this.repo.deleteRoom(roomId);
+    await this.repo.deleteRoom(roomId);
+    playbackService.clearRoom(roomId);
   }
   /** Used by socket layer after membership is confirmed. */
     async assertMember(roomId: string, userId: string) {
@@ -2175,6 +2568,355 @@ export type MemberView = {
 
 
 ================================================
+FILE: apps/api/src/realtime/chat-handlers.ts
+================================================
+import type { Server, Socket } from "socket.io";
+import {
+  ChatSendPayloadSchema,
+  ChatHistoryPayloadSchema,
+  ReactionPayloadSchema,
+  TypingPayloadSchema,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+  type InterServerEvents,
+  type SocketData,
+} from "@syncstream/contracts";
+import { AppError } from "@syncstream/shared-utils";
+import { chatService } from "../modules/chat/chat.container.js";
+import { roomService } from "../modules/room/room.container.js";
+import { socketRoomName } from "../modules/room/room.helper.js";
+import { logger } from "../config/logger.js";
+
+type IoServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+type AppSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+/** Simple per-socket rate limit: max N events per window. */
+function createRateLimiter(max: number, windowMs: number) {
+  const hits = new Map<string, number[]>();
+  return (key: string): boolean => {
+    const now = Date.now();
+    const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (arr.length >= max) {
+      hits.set(key, arr);
+      return false;
+    }
+    arr.push(now);
+    hits.set(key, arr);
+    return true;
+  };
+}
+
+const chatRateOk = createRateLimiter(20, 10_000);   // 20 msgs / 10s
+const reactionRateOk = createRateLimiter(30, 10_000);
+const typingRateOk = createRateLimiter(10, 5_000);
+
+function emitChatError(
+  socket: AppSocket,
+  err: unknown,
+  roomId?: string,
+  clientMessageId?: string,
+) {
+  if (err instanceof AppError) {
+    socket.emit("chat:error", {
+      code: err.code,
+      message: err.message,
+      roomId,
+      clientMessageId,
+    });
+    return;
+  }
+  logger.error("chat handler error", { err });
+  socket.emit("chat:error", {
+    code: "INTERNAL_ERROR",
+    message: "Unexpected chat error",
+    roomId,
+    clientMessageId,
+  });
+}
+
+export function registerChatHandlers(io: IoServer, socket: AppSocket) {
+  const user = socket.data.user;
+  if (!user) return;
+
+  // â”€â”€ send message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("chat:send", async (raw) => {
+    let roomId: string | undefined;
+    let clientMessageId: string | undefined;
+    try {
+      const parsed = ChatSendPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("chat:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+      const { roomId: rid, content, clientMessageId: cid } = parsed.data;
+      roomId = rid;
+      clientMessageId = cid;
+
+      if (!chatRateOk(`${socket.id}:chat`)) {
+        socket.emit("chat:error", {
+          code: "RATE_LIMITED",
+          message: "Too many messages; slow down",
+          roomId,
+          clientMessageId,
+        });
+        return;
+      }
+
+      // Persist first
+      const view = await chatService.send(user.id, rid, content, cid);
+
+      // Then broadcast to the Socket.IO room only
+      const channel = socketRoomName(rid);
+      io.to(channel).emit("chat:message", view);
+
+      logger.info("chat:send ok", {
+        roomId: rid,
+        userId: user.id,
+        messageId: view.id,
+      });
+    } catch (err) {
+      emitChatError(socket, err, roomId, clientMessageId);
+    }
+  });
+
+  // â”€â”€ history (on demand / reconnect) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("chat:history", async (raw) => {
+    try {
+      const parsed = ChatHistoryPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("chat:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+      const { roomId, cursor, limit } = parsed.data;
+      const result = await chatService.history(user.id, roomId, { cursor, limit });
+      socket.emit("chat:history", {
+        roomId,
+        messages: result.messages,
+        nextCursor: result.nextCursor,
+      });
+    } catch (err) {
+      emitChatError(
+        socket,
+        err,
+        typeof raw === "object" && raw && "roomId" in raw
+          ? String((raw as { roomId?: string }).roomId)
+          : undefined,
+      );
+    }
+  });
+
+  // â”€â”€ reaction (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("reaction:send", async (raw) => {
+    try {
+      const parsed = ReactionPayloadSchema.safeParse(raw);
+      if (!parsed.success) return;
+
+      const { roomId, emoji } = parsed.data;
+      if (!reactionRateOk(`${socket.id}:reaction`)) return;
+
+      await roomService.assertMember(roomId, user.id);
+
+      io.to(socketRoomName(roomId)).emit("reaction:new", {
+        roomId,
+        userId: user.id,
+        name: user.name,
+        emoji,
+        at: Date.now(),
+      });
+    } catch (err) {
+      // silent for reactions â€“ do not spam chat:error
+      logger.debug("reaction rejected", { err });
+    }
+  });
+
+  // â”€â”€ typing (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("typing:update", async (raw) => {
+    try {
+      const parsed = TypingPayloadSchema.safeParse(raw);
+      if (!parsed.success) return;
+
+      const { roomId, isTyping } = parsed.data;
+      if (!typingRateOk(`${socket.id}:typing`)) return;
+
+      await roomService.assertMember(roomId, user.id);
+
+      // do not echo back to sender
+      socket.to(socketRoomName(roomId)).emit("typing:update", {
+        roomId,
+        userId: user.id,
+        name: user.name,
+        isTyping,
+      });
+    } catch {
+      // ignore
+    }
+  });
+}
+
+
+================================================
+FILE: apps/api/src/realtime/playback-handlers.ts
+================================================
+import {
+  ClientToServerEvents,
+  InterServerEvents,
+  PlaybackCommandSchema,
+  PlaybackSyncPayloadSchema,
+  ServerToClientEvents,
+  SocketData,
+} from "@syncstream/contracts";
+import { AppError } from "@syncstream/shared-utils";
+import { Server, Socket } from "socket.io";
+import { logger } from "../config/logger.js";
+import { roomService } from "../modules/room/room.container.js";
+import { playbackService } from "../modules/playback/playback.container.js";
+import { socketRoomName } from "../modules/room/room.helper.js";
+
+type IoServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+type AppSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+function emitPlaybackError(
+  socket: AppSocket,
+  err: unknown,
+  roomId?: string,
+  commandId?: string,
+) {
+  if (err instanceof AppError) {
+    socket.emit("playback:error", {
+      code: err.code,
+      message: err.message,
+      roomId,
+      commandId,
+    });
+    return;
+  }
+  logger.error("playback handler error", { err });
+  socket.emit("playback:error", {
+    code: "INTERNAL_ERROR",
+    message: "Unexpected playback error",
+    roomId,
+    commandId,
+  });
+}
+export function registerPlaybackHandlers(io: IoServer, socket: AppSocket) {
+  const user = socket.data.user
+  if (!user) return
+  // â”€â”€ Client asks for current state (reconnect / late join) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("playback:sync", async (raw) => {
+    try {
+      const parsed = PlaybackSyncPayloadSchema.safeParse(raw)
+      if (!parsed.success) {
+        socket.emit("playback:error", {
+                  code: "BAD_REQUEST",
+                  message: parsed.error.issues.map((i) => i.message).join(", "),
+                });
+                return;
+      }
+      const { roomId } = parsed.data
+      // Must be a member
+      await roomService.assertMember(roomId, user.id);
+      const state = playbackService.getState(roomId)
+      if (!state) {
+              // No video has been selected yet â€“ still a valid reply
+              socket.emit("playback:snapshot", {
+                roomId,
+                state: {
+                  videoId: "",
+                  status: "PAUSED",
+                  position: 0,
+                  updatedAt: Date.now(),
+                  playbackRate: 1,
+                  sequence: 0,
+                },
+              });
+              return;
+      }
+
+      socket.emit("playback:snapshot", { roomId, state });
+    } catch (err) {
+      emitPlaybackError(socket,err,typeof raw === "object" && raw && "roomId" in raw
+                ? String((raw as { roomId?: string }).roomId)
+                : undefined)
+    }
+  })
+
+  // â”€â”€ Host / co-host issues a command â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("playback:command", async (raw) => {
+    let commandId: string | undefined;
+    let roomId: string | undefined;
+    try {
+      const parsed = PlaybackCommandSchema.safeParse(raw)
+      if (!parsed.success) {
+              socket.emit("playback:error", {
+                code: "BAD_REQUEST",
+                message: parsed.error.issues.map((i) => i.message).join(", "),
+              });
+              return;
+      }
+      const cmd = parsed.data
+      commandId = cmd.commandId;
+      roomId = cmd.roomId;
+
+      // Membership + role
+            const membership = await roomService.assertMember(roomId, user.id);
+      
+            const result = playbackService.applyCommand(
+              roomId,
+              user.id,
+              membership.role,
+              cmd,
+            );
+            // Even on duplicate we still broadcast the current state so the
+                  // client that retried gets the latest sequence.
+      const channel = socketRoomName(roomId)
+      io.to(channel).emit("playback:state", {
+              roomId,
+              state: result.state,
+            });
+      
+            logger.info("playback:command accepted", {
+              roomId,
+              userId: user.id,
+              action: cmd.action,
+              sequence: result.state.sequence,
+              duplicate: result.duplicate,
+            });
+    }
+    catch (err) {
+      emitPlaybackError(socket, err, roomId, commandId);
+    }
+  })
+  }
+
+
+
+================================================
 FILE: apps/api/src/realtime/room-handlers.ts
 ================================================
 import type { Server, Socket } from "socket.io";
@@ -2191,6 +2933,7 @@ import { roomService } from "../modules/room/room.container.js";
 import { socketRoomName } from "../modules/room/room.helper.js";
 import { roomPresence } from "./room-presence.js";
 import { logger } from "../config/logger.js";
+import { playbackService } from "../modules/playback/playback.container.js";
 
 type IoServer = Server<
   ClientToServerEvents,
@@ -2214,7 +2957,7 @@ function emitRoomError(socket: AppSocket, err: unknown, roomId?: string) {
     });
     return;
   }
-  logger.error({ err }, "room handler error");
+  logger.error( "room handler error",{ err });
   socket.emit("room:error", {
     code: "INTERNAL_ERROR",
     message: "Unexpected room error",
@@ -2257,7 +3000,13 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
       });
 
       socket.emit("room:members", { roomId, members });
-
+      const playbackState = playbackService.getState(roomId);
+            if (playbackState) {
+              socket.emit("playback:snapshot", {
+                roomId,
+                state: playbackState,
+              });
+            }
       if (result.created) {
         const me = members.find((m) => m.userId === user.id);
         if (me) {
@@ -2511,6 +3260,8 @@ import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { registerSocketAuth } from "./socket-auth.js";
 import { registerRoomHandlers } from "./room-handlers.js";
+import { registerPlaybackHandlers } from "./playback-handlers.js";
+import { registerChatHandlers } from "./chat-handlers.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const io = new Server<
@@ -2554,6 +3305,8 @@ export function createSocketServer(httpServer: HttpServer) {
     });
 
     registerRoomHandlers(io, socket);
+    registerPlaybackHandlers(io, socket);  
+   registerChatHandlers(io, socket); 
 
     socket.on("disconnect", (reason) => {
       logger.info("Socket disconnected", {
@@ -2645,17 +3398,13 @@ export const ClientPingSchema = z.object({
 });
 export type ClientPing = z.infer<typeof ClientPingSchema>;
 
-
-
 // â”€â”€â”€ Room enums / shared â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export const RoomVisibilitySchema = z.enum(["PRIVATE", "PUBLIC"])
-export type RoomVisibility = z.infer<typeof RoomVisibilitySchema>
+export const RoomVisibilitySchema = z.enum(["PRIVATE", "PUBLIC"]);
+export type RoomVisibility = z.infer<typeof RoomVisibilitySchema>;
 
 export const RoomRoleSchema = z.enum(["HOST", "CO_HOST", "VIEWER"]);
 export type RoomRole = z.infer<typeof RoomRoleSchema>;
-
-
 
 export const RoomMemberViewSchema = z.object({
   userId: z.uuid(),
@@ -2664,7 +3413,7 @@ export const RoomMemberViewSchema = z.object({
   role: RoomRoleSchema,
   online: z.boolean(),
   joinedAt: z.iso.datetime().or(z.string()),
-})
+});
 
 export type RoomMemberView = z.infer<typeof RoomMemberViewSchema>;
 
@@ -2682,7 +3431,6 @@ export const RoomViewSchema = z.object({
 });
 export type RoomView = z.infer<typeof RoomViewSchema>;
 
-
 // â”€â”€â”€ Socket: client â†’ server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const RoomJoinPayloadSchema = z
   .object({
@@ -2694,7 +3442,6 @@ export const RoomJoinPayloadSchema = z
   });
 
 export type RoomJoinPayload = z.infer<typeof RoomJoinPayloadSchema>;
-
 
 export const RoomLeavePayloadSchema = z.object({
   roomId: z.uuid(),
@@ -2710,13 +3457,11 @@ export const RoomMembersPayloadSchema = z.object({
 });
 export type RoomMembersPayload = z.infer<typeof RoomMembersPayloadSchema>;
 
-
 export const RoomStatePayloadSchema = z.object({
   room: RoomViewSchema,
   members: z.array(RoomMemberViewSchema),
 });
 export type RoomStatePayload = z.infer<typeof RoomStatePayloadSchema>;
-
 
 export const RoomErrorPayloadSchema = z.object({
   code: z.string(),
@@ -2725,12 +3470,13 @@ export const RoomErrorPayloadSchema = z.object({
 });
 export type RoomErrorPayload = z.infer<typeof RoomErrorPayloadSchema>;
 
-
 export const RoomMemberJoinedPayloadSchema = z.object({
   roomId: z.uuid(),
   member: RoomMemberViewSchema,
 });
-export type RoomMemberJoinedPayload = z.infer<typeof RoomMemberJoinedPayloadSchema>;
+export type RoomMemberJoinedPayload = z.infer<
+  typeof RoomMemberJoinedPayloadSchema
+>;
 
 export const RoomMemberLeftPayloadSchema = z.object({
   roomId: z.uuid(),
@@ -2738,34 +3484,223 @@ export const RoomMemberLeftPayloadSchema = z.object({
 });
 export type RoomMemberLeftPayload = z.infer<typeof RoomMemberLeftPayloadSchema>;
 
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Phase 3 â€“ Playback synchronization
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/**
+ * Authoritative playback state owned by the server.
+ * Clients never invent this; they only apply what the server broadcasts.
+ */
+
+export const PlaybackStatusSchema = z.enum(["PLAYING", "PAUSED"]);
+export type PlaybackStatus = z.infer<typeof PlaybackStatusSchema>;
+
+export const PlaybackStateSchema = z.object({
+  videoId: z.string().min(1), // for now a direct URL or simple asset id
+  status: PlaybackStatusSchema,
+  position: z.number().min(0), // seconds at the moment of updatedAt
+  updatedAt: z.number().int(), // server timestamp in ms
+  playbackRate: z.number().positive().default(1),
+  sequence: z.number().int().nonnegative(),
+});
+export type PlaybackState = z.infer<typeof PlaybackStateSchema>;
+
+/**
+ * Client â†’ Server command.
+ * The server validates, checks permissions, deduplicates by commandId,
+ * then produces a new PlaybackState.
+ */
+export const PlaybackActionSchema = z.enum([
+  "PLAY",
+  "PAUSE",
+  "SEEK",
+  "CHANGE_VIDEO",
+]);
+export type PlaybackAction = z.infer<typeof PlaybackActionSchema>;
+
+export const PlaybackCommandSchema = z
+  .object({
+    roomId: z.uuid(),
+    action: PlaybackActionSchema,
+    position: z.number().min(0).optional(), // required for SEEK, optional for PLAY
+    videoId: z.string().min(1).optional(), // required for CHANGE_VIDEO
+    commandId: z.uuid(), // client-generated, used for dedup
+  })
+  .superRefine((val, ctx) => {
+    if (val.action === "SEEK" && val.position === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "position is required for SEEK",
+        path: ["position"],
+      });
+    }
+    if (val.action === "CHANGE_VIDEO" && !val.videoId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "videoId is required for CHANGE_VIDEO",
+        path: ["videoId"],
+      });
+    }
+  });
+export type PlaybackCommand = z.infer<typeof PlaybackCommandSchema>;
+
+/** Client asks for the current authoritative state (reconnect / late join). */
+export const PlaybackSyncPayloadSchema = z.object({
+  roomId: z.uuid(),
+});
+export type PlaybackSyncPayload = z.infer<typeof PlaybackSyncPayloadSchema>;
+
+/** Server â†’ room: the accepted new state after a command. */
+export const PlaybackStatePayloadSchema = z.object({
+  roomId: z.uuid(),
+  state: PlaybackStateSchema,
+});
+export type PlaybackStatePayload = z.infer<typeof PlaybackStatePayloadSchema>;
+
+/** Server â†’ single client: reply to playback:sync. */
+export const PlaybackSnapshotPayloadSchema = z.object({
+  roomId: z.uuid(),
+  state: PlaybackStateSchema,
+});
+export type PlaybackSnapshotPayload = z.infer<
+  typeof PlaybackSnapshotPayloadSchema
+>;
+
+/** Server â†’ client: command rejected or other playback error. */
+export const PlaybackErrorPayloadSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  roomId: z.uuid().optional(),
+  commandId: z.uuid().optional(),
+});
+export type PlaybackErrorPayload = z.infer<typeof PlaybackErrorPayloadSchema>;
+
+// â”€â”€â”€ Phase 4 â€“ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const ChatSendPayloadSchema = z.object({
+  roomId: z.uuid(),
+  content: z.string().min(1).max(2000).trim(),
+  clientMessageId: z.uuid().optional(), // optional client dedup key
+});
+export type ChatSendPayload = z.infer<typeof ChatSendPayloadSchema>;
+
+export const ChatMessageViewSchema = z.object({
+  id: z.uuid(),
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  avatarUrl: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(), // ISO
+  clientMessageId: z.uuid().optional(),
+});
+export type ChatMessageView = z.infer<typeof ChatMessageViewSchema>;
+
+export const ChatHistoryPayloadSchema = z.object({
+  roomId: z.uuid(),
+  /** cursor = createdAt ISO of the oldest message you already have; omit for latest */
+  cursor: z.string().optional(),
+  limit: z.number().int().min(1).max(100).optional().default(50),
+});
+export type ChatHistoryPayload = z.infer<typeof ChatHistoryPayloadSchema>;
+
+export const ChatHistoryResultSchema = z.object({
+  roomId: z.uuid(),
+  messages: z.array(ChatMessageViewSchema),
+  nextCursor: z.string().nullable(), // null = no older messages
+});
+export type ChatHistoryResult = z.infer<typeof ChatHistoryResultSchema>;
+
+export const ChatErrorPayloadSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  roomId: z.uuid().optional(),
+  clientMessageId: z.uuid().optional(),
+});
+export type ChatErrorPayload = z.infer<typeof ChatErrorPayloadSchema>;
+
+// â”€â”€â”€ Reactions (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const ReactionPayloadSchema = z.object({
+  roomId: z.uuid(),
+  emoji: z.string().min(1).max(32), // "ðŸ”¥", "ðŸ˜‚", etc.
+});
+export type ReactionPayload = z.infer<typeof ReactionPayloadSchema>;
+
+export const ReactionBroadcastSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  emoji: z.string(),
+  at: z.number().int(), // server time ms
+});
+export type ReactionBroadcast = z.infer<typeof ReactionBroadcastSchema>;
+
+// â”€â”€â”€ Typing (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const TypingPayloadSchema = z.object({
+  roomId: z.uuid(),
+  isTyping: z.boolean(),
+});
+export type TypingPayload = z.infer<typeof TypingPayloadSchema>;
+
+export const TypingBroadcastSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  isTyping: z.boolean(),
+});
+export type TypingBroadcast = z.infer<typeof TypingBroadcastSchema>;
 
 // â”€â”€â”€ Typed event map  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServerToClientEvents {
   "server:hello": (payload: ServerHello) => void;
   "server:pong": (payload: { serverTime: number; clientTime: number }) => void;
+  // rooms
   "room:state": (payload: RoomStatePayload) => void;
-    "room:members": (payload: RoomMembersPayload) => void;
-    "room:member-joined": (payload: RoomMemberJoinedPayload) => void;
-    "room:member-left": (payload: RoomMemberLeftPayload) => void;
-    "room:error": (payload: RoomErrorPayload) => void;
+  "room:members": (payload: RoomMembersPayload) => void;
+  "room:member-joined": (payload: RoomMemberJoinedPayload) => void;
+  "room:member-left": (payload: RoomMemberLeftPayload) => void;
+  "room:error": (payload: RoomErrorPayload) => void;
+  "chat:message": (payload: ChatMessageView) => void;
+  "chat:history": (payload: ChatHistoryResult) => void;
+  "chat:error": (payload: ChatErrorPayload) => void;
+  "reaction:new": (payload: ReactionBroadcast) => void;
+  "typing:update": (payload: TypingBroadcast) => void;
+
+  // playback (Phase 3)
+  "playback:state": (payload: PlaybackStatePayload) => void;
+  "playback:snapshot": (payload: PlaybackSnapshotPayload) => void;
+  "playback:error": (payload: PlaybackErrorPayload) => void;
 }
 
 export interface ClientToServerEvents {
   "client:ping": (payload: ClientPing) => void;
+  // rooms
   "room:join": (payload: RoomJoinPayload) => void;
-    "room:leave": (payload: RoomLeavePayload) => void;
+  "room:leave": (payload: RoomLeavePayload) => void;
+
+  // playback (Phase 3)
+  "playback:command": (payload: PlaybackCommand) => void;
+  "playback:sync": (payload: PlaybackSyncPayload) => void;
+
+  "chat:send": (payload: ChatSendPayload) => void;
+  "chat:history": (payload: ChatHistoryPayload) => void;
+  "reaction:send": (payload: ReactionPayload) => void;
+  "typing:update": (payload: TypingPayload) => void;
 }
 
 export interface InterServerEvents {}
 
-export interface SocketData{
+export interface SocketData {
   user?: {
     id: string;
     email: string;
     name: string;
-    avatarUrl:string|null
-  }
+    avatarUrl: string | null;
+  };
 }
+
 
 
 ================================================
