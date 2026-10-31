@@ -1,5 +1,6 @@
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
 } from "@syncstream/shared-utils";
 import { prisma } from "../../infrastructure/prisma.js";
@@ -182,5 +183,40 @@ export class RoomRepository implements RoomInterface {
     await prisma.roomMember.delete({
       where: { roomId_userId: { roomId, userId } },
     });
+  }
+
+  async setMemberRole(roomId: string, userId: string, role: RoomRole): Promise<void> {
+    await prisma.roomMember.update({
+      where: { roomId_userId: { roomId, userId } },
+      data:{role}
+    })
+  }
+  async transferHost(roomId: string, fromUserId: string, toUserId: string): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      const room = await tx.room.findUnique({ where: { id: roomId } });
+          if (!room) throw new NotFoundError("Room", roomId);
+          if (room.hostId !== fromUserId) {
+            throw new ForbiddenError("Only the current host can transfer");
+          }
+      
+          const target = await tx.roomMember.findUnique({
+            where: { roomId_userId: { roomId, userId: toUserId } },
+          });
+          if (!target) {
+            throw new NotFoundError("Member", toUserId);
+      }
+      await tx.roomMember.update({
+            where: { roomId_userId: { roomId, userId: fromUserId } },
+            data: { role: "VIEWER" },
+          });
+          await tx.roomMember.update({
+            where: { roomId_userId: { roomId, userId: toUserId } },
+            data: { role: "HOST" },
+          });
+          await tx.room.update({
+            where: { id: roomId },
+            data: { hostId: toUserId },
+          });
+    })
   }
 }

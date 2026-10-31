@@ -5,6 +5,7 @@ import {
 } from "@syncstream/contracts";
 import { RoomPlayback } from "./playback.types.js";
 import { ForbiddenError, ValidationError } from "@syncstream/shared-utils";
+import { assertCan } from "../room/room.permissions.js";
 
 const MAX_RECENT_COMMANDS = 64; // per room – enough to stop network retries
 
@@ -38,9 +39,7 @@ export class PlaybackService {
     cmd: PlaybackCommand,
   ) {
     // 1. Permission
-    if (role !== "HOST" && role !== "CO_HOST") {
-      throw new ForbiddenError("Only host or co-host can control playback");
-    }
+    assertCan(role, "PLAYBACK_CONTROL");
     // 2. Deduplication
     if (this.isDuplicate(roomId, cmd.commandId)) {
       const current = this.states.get(roomId);

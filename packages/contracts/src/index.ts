@@ -268,6 +268,53 @@ export const TypingBroadcastSchema = z.object({
 });
 export type TypingBroadcast = z.infer<typeof TypingBroadcastSchema>;
 
+// ─── Phase 5 – Permissions & lifecycle ──────────────────────────────────────
+
+export const TransferHostPayloadSchema = z.object({
+  roomId: z.uuid(),
+  toUserId: z.uuid(),
+});
+export type TransferHostPayload = z.infer<typeof TransferHostPayloadSchema>;
+
+export const RemoveMemberPayloadSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+});
+export type RemoveMemberPayload = z.infer<typeof RemoveMemberPayloadSchema>;
+
+export const ChangeRolePayloadSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  role: z.enum(["CO_HOST", "VIEWER"]), // cannot set HOST via this path
+});
+export type ChangeRolePayload = z.infer<typeof ChangeRolePayloadSchema>;
+
+export const RoomHostChangedPayloadSchema = z.object({
+  roomId: z.uuid(),
+  previousHostId: z.uuid(),
+  newHostId: z.uuid(),
+  reason: z.enum(["TRANSFER", "DISCONNECT_GRACE", "FORCE"]),
+});
+export type RoomHostChangedPayload = z.infer<typeof RoomHostChangedPayloadSchema>;
+
+export const RoomMemberRoleChangedPayloadSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  role: RoomRoleSchema,
+});
+export type RoomMemberRoleChangedPayload = z.infer<
+  typeof RoomMemberRoleChangedPayloadSchema
+>;
+
+export const RoomMemberRemovedPayloadSchema = z.object({
+  roomId: z.uuid(),
+  userId: z.uuid(),
+  removedBy: z.uuid(),
+});
+export type RoomMemberRemovedPayload = z.infer<
+  typeof RoomMemberRemovedPayloadSchema
+>;
+
 // ─── Typed event map  ────────────────────────────────
 export interface ServerToClientEvents {
   "server:hello": (payload: ServerHello) => void;
@@ -283,6 +330,10 @@ export interface ServerToClientEvents {
   "chat:error": (payload: ChatErrorPayload) => void;
   "reaction:new": (payload: ReactionBroadcast) => void;
   "typing:update": (payload: TypingBroadcast) => void;
+  
+  "room:host-changed": (payload: RoomHostChangedPayload) => void;
+    "room:member-role-changed": (payload: RoomMemberRoleChangedPayload) => void;
+    "room:member-removed": (payload: RoomMemberRemovedPayload) => void;
 
   // playback (Phase 3)
   "playback:state": (payload: PlaybackStatePayload) => void;
@@ -304,6 +355,10 @@ export interface ClientToServerEvents {
   "chat:history": (payload: ChatHistoryPayload) => void;
   "reaction:send": (payload: ReactionPayload) => void;
   "typing:update": (payload: TypingPayload) => void;
+
+  "room:transfer-host": (payload: TransferHostPayload) => void;
+    "room:remove-member": (payload: RemoveMemberPayload) => void;
+    "room:change-role": (payload: ChangeRolePayload) => void;
 }
 
 export interface InterServerEvents {}

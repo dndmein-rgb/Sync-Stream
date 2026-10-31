@@ -27,4 +27,13 @@ export interface RoomInterface {
      */
   joinAsViewer(userId: string, roomId: string): Promise<{ membership: { role: RoomRole; joinedAt: Date }; created: boolean }>
   removeMember(roomId: string, userId: string): Promise<void>;
+
+  setMemberRole(roomId: string, userId: string, role: RoomRole): Promise<void>
+  /**
+   * Atomic host transfer:
+   * - old host → VIEWER (or CO_HOST if you prefer)
+   * - new host → HOST
+   * - Room.hostId updated
+   */
+  transferHost(roomId:string,fromUserId:string,toUserId:string):Promise<void>
 }

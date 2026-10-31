@@ -15,7 +15,8 @@ const envSchema = z.object({
     JWT_REFRESH_SECRET: z.string().min(32),
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
-    BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
+  BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
+    HOST_GRACE_MS: z.coerce.number().int().min(5_000).default(60_000),
 });
 
 const parsed = envSchema.safeParse(process.env);

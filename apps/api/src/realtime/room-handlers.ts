@@ -6,6 +6,9 @@ import {
   type ServerToClientEvents,
   type InterServerEvents,
   type SocketData,
+  ChangeRolePayloadSchema,
+  RemoveMemberPayloadSchema,
+  TransferHostPayloadSchema,
 } from "@syncstream/contracts";
 import { AppError } from "@syncstream/shared-utils";
 import { roomService } from "../modules/room/room.container.js";
@@ -13,6 +16,7 @@ import { socketRoomName } from "../modules/room/room.helper.js";
 import { roomPresence } from "./room-presence.js";
 import { logger } from "../config/logger.js";
 import { playbackService } from "../modules/playback/playback.container.js";
+import { hostLifecycle } from "./host-lifecycle.js";
 
 type IoServer = Server<
   ClientToServerEvents,
@@ -69,6 +73,10 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
 
       socket.join(channel);
       roomPresence.add(roomId, user.id, socket.id);
+      const room = result.room;
+      if (room.hostId === user.id) {
+        hostLifecycle.onHostCameOnline(roomId, user.id);
+      }
 
       // Refresh members with presence
       const members = await roomService.buildMemberList(roomId);
@@ -123,22 +131,29 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
         });
         return;
       }
-
+  
       const { roomId, leaveMembership } = parsed.data;
       const channel = socketRoomName(roomId);
-
+  
+      const hostId = await roomService.getRoomHostId(roomId);
+      const wasHost = hostId === user.id;
+  
       socket.leave(channel);
       const wentOffline = roomPresence.remove(roomId, user.id, socket.id);
-
+  
       if (leaveMembership) {
         await roomService.leave(user.id, roomId);
         io.to(channel).emit("room:member-left", { roomId, userId: user.id });
+        if (wasHost) hostLifecycle.cancel(roomId);
       } else if (wentOffline) {
-        // Still a member, but offline
         const members = await roomService.buildMemberList(roomId);
         io.to(channel).emit("room:members", { roomId, members });
+        if (wasHost) {
+          hostLifecycle.onHostWentOffline(io, roomId, user.id);
+        }
       }
-
+      // else: still online on another socket — no broadcast needed
+  
       logger.info("room:leave ok", {
         roomId,
         userId: user.id,
@@ -152,25 +167,128 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
         typeof raw === "object" && raw && "roomId" in raw
           ? String((raw as { roomId?: string }).roomId)
           : undefined,
+        
       );
     }
   });
 
   socket.on("disconnect", () => {
     const changes = roomPresence.removeSocket(socket.id, user.id);
+  
     for (const { roomId, userWentOffline } of changes) {
       if (!userWentOffline) continue;
-      void roomService
-        .buildMemberList(roomId)
-        .then((members) => {
+  
+      void (async () => {
+        try {
+          const members = await roomService.buildMemberList(roomId);
           io.to(socketRoomName(roomId)).emit("room:members", {
             roomId,
             members,
           });
-        })
-        .catch((err) => {
-          logger.warn({ err, roomId }, "failed to broadcast presence on disconnect");
+  
+          const hostId = await roomService.getRoomHostId(roomId);
+          if (hostId === user.id) {
+            hostLifecycle.onHostWentOffline(io, roomId, user.id);
+          }
+        } catch (err) {
+          logger.warn(
+            { err, roomId },
+            "failed to broadcast presence on disconnect",
+          );
+        }
+      })();
+    }
+  });
+  socket.on("room:transfer-host", async (raw) => {
+    let roomId: string | undefined;
+    try {
+      const parsed = TransferHostPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("room:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
         });
+        return;
+      }
+      roomId = parsed.data.roomId;
+          const { toUserId } = parsed.data;
+      const result = await roomService.transferHost(user.id, roomId, toUserId);
+      const channel = socketRoomName(roomId);
+  
+      hostLifecycle.cancel(roomId); // voluntary transfer clears grace
+  
+      io.to(channel).emit("room:host-changed", {
+        roomId,
+        previousHostId: result.previousHostId,
+        newHostId: result.newHostId,
+        reason: "TRANSFER",
+      });
+      io.to(channel).emit("room:members", { roomId, members: result.members });
+    } catch (err) {
+      emitRoomError(socket, err, roomId);
+    }
+  });
+  
+  socket.on("room:remove-member", async (raw) => {
+    let roomId: string | undefined;
+    try {
+      const parsed = RemoveMemberPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+            socket.emit("room:error", {
+              code: "BAD_REQUEST",
+              message: parsed.error.issues.map((i) => i.message).join(", "),
+            });
+            return;
+          }
+          roomId = parsed.data.roomId;
+              const targetId = parsed.data.userId;  
+      await roomService.removeMember(user.id, roomId, targetId);
+  
+      const channel = socketRoomName(roomId);
+      io.to(channel).emit("room:member-removed", {
+        roomId,
+        userId: targetId,
+        removedBy: user.id,
+      });
+      const members = await roomService.buildMemberList(roomId);
+      io.to(channel).emit("room:members", { roomId, members });
+  
+      // Force target sockets out of the channel (best-effort single process)
+      // Optional: track userId → socketIds if you need hard kick
+    } catch (err) {
+      emitRoomError(socket, err,roomId);
+    }
+  });
+  
+  socket.on("room:change-role", async (raw) => {
+    let roomId: string | undefined;
+    try {
+      const parsed = ChangeRolePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+            socket.emit("room:error", {
+              code: "BAD_REQUEST",
+              message: parsed.error.issues.map((i) => i.message).join(", "),
+            });
+            return;
+          }
+          roomId = parsed.data.roomId;
+          const { userId: targetId, role } = parsed.data;
+  
+      const members = await roomService.changeRole(
+        user.id,
+        roomId,
+        targetId,
+        role,
+      );
+      const channel = socketRoomName(roomId);
+      io.to(channel).emit("room:member-role-changed", {
+        roomId,
+        userId: targetId,
+        role,
+      });
+      io.to(channel).emit("room:members", { roomId, members });
+    } catch (err) {
+      emitRoomError(socket, err,roomId);
     }
   });
 }
