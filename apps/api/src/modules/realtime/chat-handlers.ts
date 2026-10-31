@@ -14,6 +14,7 @@
   import { roomService } from "../room/room.container.js";
   import { socketRoomName } from "../room/room.helper.js";
   import { logger } from "../../config/logger.js";
+import { metrics } from "../../infrastructure/metrics.js";
   
   type IoServer = Server<
     ClientToServerEvents,
@@ -54,6 +55,7 @@
     roomId?: string,
     clientMessageId?: string,
   ) {
+    metrics.chatMessagesRejected += 1;
     if (err instanceof AppError) {
       socket.emit("chat:error", {
         code: err.code,
@@ -109,7 +111,7 @@
         // Then broadcast to the Socket.IO room only
         const channel = socketRoomName(rid);
         io.to(channel).emit("chat:message", view);
-  
+        metrics.chatMessagesSent += 1;
         logger.info("chat:send ok", {
           roomId: rid,
           userId: user.id,

@@ -15,6 +15,7 @@ import { registerPlaybackHandlers } from "./playback-handlers.js";
 import { registerChatHandlers } from "./chat-handlers.js";
 import { redis } from "../../infrastructure/redis.js";
 import { createAdapter } from "@socket.io/redis-adapter";
+import { metrics } from "../../infrastructure/metrics.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const pubClient = redis.duplicate();
@@ -38,6 +39,7 @@ export function createSocketServer(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const user = socket.data.user;
+    metrics.incSockets(1);
     logger.info("Socket connected", {
       socketId: socket.id,
       userId: user?.id,
@@ -66,6 +68,7 @@ export function createSocketServer(httpServer: HttpServer) {
    registerChatHandlers(io, socket); 
 
     socket.on("disconnect", (reason) => {
+      metrics.incSockets(-1);
       logger.info("Socket disconnected", {
         socketId: socket.id,
         userId: user?.id,

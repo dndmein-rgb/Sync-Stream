@@ -3,6 +3,7 @@ import { verifyAccessToken } from "../auth/auth.helper.js";
 import { authService } from "../auth/auth.container.js";
 import { SafeUser } from "../auth/auth.types.js";
 import { logger } from "../../config/logger.js";
+import { metrics } from "../../infrastructure/metrics.js";
 /**
  * Handshake auth: client must send
  *   io(url, { auth: { token: accessToken } })
@@ -33,6 +34,7 @@ export function registerSocketAuth(io: Server) {
       socket.data.user = user;
       next();
     } catch (err) {
+      metrics.socketUnauthorized += 1;
       logger.warn("Socket auth failed", {
         socketId: socket.id,
         error: err instanceof Error ? err.message : String(err),

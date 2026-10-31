@@ -1,6 +1,7 @@
 import {Redis} from "ioredis";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
+import { metrics } from "./metrics.js";
 
 /**
  * Primary Redis client used by the application
@@ -14,8 +15,10 @@ export const redis = new Redis(config.REDIS_URL, {
 
 redis.on("connect", () => logger.info("Redis connected"));
 redis.on("ready", () => logger.info("Redis ready"));
-redis.on("error", (err) => logger.error({ err }, "Redis error"));
-redis.on("close", () => logger.warn("Redis connection closed"));
+redis.on("error", (err) => {
+  metrics.redisErrors += 1;
+  logger.error({ err }, "Redis error");
+});redis.on("close", () => logger.warn("Redis connection closed"));
 
 /**
  * Graceful shutdown helper.
