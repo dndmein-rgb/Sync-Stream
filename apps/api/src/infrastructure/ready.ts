@@ -1,5 +1,6 @@
 import pg from "pg";
 import { config } from "../config/index.js";
+import { redis } from "./redis.js";
 
 export type ReadyCheck = {
   name: string;
@@ -35,10 +36,32 @@ async function checkPostgres(): Promise<ReadyCheck> {
   }
 }
 
+async function checkRedis(): Promise<ReadyCheck> {
+  const start = Date.now();
+  try {
+    const pong = await redis.ping();
+    return {
+      name: "redis",
+      ok: pong === "PONG",
+      latencyMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      name: "redis",
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function getReadyStatus(): Promise<ReadyResult> {
-  const pgCheck = await checkPostgres();
+  const [pgCheck, redisCheck] = await Promise.all([
+    checkPostgres(),
+    checkRedis(),
+  ]);
   return {
-    ready: pgCheck.ok,
-    checks: [pgCheck],
+    ready: pgCheck.ok && redisCheck.ok,
+    checks: [pgCheck, redisCheck],
   };
 }

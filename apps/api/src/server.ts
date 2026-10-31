@@ -3,13 +3,13 @@ import { createApp } from "./app.js";
 import { config } from "./config/index.js";
 import { logger } from "./config/logger.js";
 import { prisma } from "./infrastructure/prisma.js";
-import { createSocketServer } from "./realtime/socket-server.js";
+import { closeRedis } from "./infrastructure/redis.js";
+import { createSocketServer } from "./modules/realtime/socket-server.js";
 
 async function main() {
   const app = createApp();
   const httpServer = createServer(app);
 
-  // Attach Socket.IO to the same HTTP server
   const io = createSocketServer(httpServer);
 
   httpServer.listen(config.PORT, () => {
@@ -20,12 +20,12 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info(`Shutting down API (${signal})`);
 
-    // Stop accepting new connections
     io.close();
 
     httpServer.close(async () => {
       try {
         await prisma.$disconnect();
+        await closeRedis();
         logger.info("API shutdown complete");
         process.exit(0);
       } catch (err) {
@@ -34,7 +34,6 @@ async function main() {
       }
     });
 
-    // Force exit if drain takes too long
     setTimeout(() => process.exit(1), 15_000).unref();
   };
 

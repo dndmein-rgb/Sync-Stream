@@ -1,8 +1,8 @@
 import { Server, Socket } from "socket.io";
-import { verifyAccessToken } from "../modules/auth/auth.helper.js";
-import { authService } from "../modules/auth/auth.container.js";
-import { SafeUser } from "../modules/auth/auth.types.js";
-import { logger } from "../config/logger.js";
+import { verifyAccessToken } from "../auth/auth.helper.js";
+import { authService } from "../auth/auth.container.js";
+import { SafeUser } from "../auth/auth.types.js";
+import { logger } from "../../config/logger.js";
 /**
  * Handshake auth: client must send
  *   io(url, { auth: { token: accessToken } })

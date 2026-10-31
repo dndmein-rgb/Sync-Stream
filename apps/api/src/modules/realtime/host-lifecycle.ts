@@ -1,7 +1,7 @@
-import { logger } from "../config/logger.js";
-import { roomService } from "../modules/room/room.container.js";
+import { logger } from "../../config/logger.js";
+import { roomService } from "../room/room.container.js";
 import { roomPresence } from "./room-presence.js";
-import { socketRoomName } from "../modules/room/room.helper.js";
+import { socketRoomName } from "../room/room.helper.js";
 import type { Server } from "socket.io";
 import type {
   ClientToServerEvents,
@@ -9,7 +9,7 @@ import type {
   InterServerEvents,
   SocketData,
 } from "@syncstream/contracts";
-import { config } from "../config/index.js";
+import { config } from "../../config/index.js";
 
 type IoServer = Server<
   ClientToServerEvents,
@@ -64,7 +64,7 @@ class HostLifecycle {
     this.pending.delete(roomId);
 
     // Host came back on another code path?
-    if (roomPresence.isOnline(roomId, hostId)) {
+    if (await roomPresence.isOnline(roomId, hostId)) {
       logger.info("host grace expired but host online; skip", { roomId, hostId });
       return;
     }

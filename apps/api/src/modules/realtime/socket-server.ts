@@ -7,14 +7,18 @@ import type {
   SocketData,
 } from "@syncstream/contracts";
 import { ClientPingSchema } from "@syncstream/contracts";
-import { config } from "../config/index.js";
-import { logger } from "../config/logger.js";
+import { config } from "../../config/index.js";
+import { logger } from "../../config/logger.js";
 import { registerSocketAuth } from "./socket-auth.js";
 import { registerRoomHandlers } from "./room-handlers.js";
 import { registerPlaybackHandlers } from "./playback-handlers.js";
 import { registerChatHandlers } from "./chat-handlers.js";
+import { redis } from "../../infrastructure/redis.js";
+import { createAdapter } from "@socket.io/redis-adapter";
 
 export function createSocketServer(httpServer: HttpServer) {
+  const pubClient = redis.duplicate();
+    const subClient = redis.duplicate();
   const io = new Server<
     ClientToServerEvents,
     ServerToClientEvents,
@@ -25,7 +29,9 @@ export function createSocketServer(httpServer: HttpServer) {
     cors: {
       origin: config.CLIENT_ORIGINS,
       credentials: true,
+    
     },
+    adapter: createAdapter(pubClient, subClient),
   });
 
   registerSocketAuth(io);

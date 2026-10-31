@@ -11,11 +11,11 @@ import {
   TransferHostPayloadSchema,
 } from "@syncstream/contracts";
 import { AppError } from "@syncstream/shared-utils";
-import { roomService } from "../modules/room/room.container.js";
-import { socketRoomName } from "../modules/room/room.helper.js";
+import { roomService } from "../room/room.container.js";
+import { socketRoomName } from "../room/room.helper.js";
 import { roomPresence } from "./room-presence.js";
-import { logger } from "../config/logger.js";
-import { playbackService } from "../modules/playback/playback.container.js";
+import { logger } from "../../config/logger.js";
+import { playbackService } from "../playback/playback.container.js";
 import { hostLifecycle } from "./host-lifecycle.js";
 
 type IoServer = Server<
@@ -72,7 +72,7 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
       const channel = socketRoomName(roomId);
 
       socket.join(channel);
-      roomPresence.add(roomId, user.id, socket.id);
+      await roomPresence.add(roomId, user.id, socket.id);
       const room = result.room;
       if (room.hostId === user.id) {
         hostLifecycle.onHostCameOnline(roomId, user.id);
@@ -87,7 +87,7 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
       });
 
       socket.emit("room:members", { roomId, members });
-      const playbackState = playbackService.getState(roomId);
+      const playbackState =await playbackService.getState(roomId);
             if (playbackState) {
               socket.emit("playback:snapshot", {
                 roomId,
@@ -139,7 +139,7 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
       const wasHost = hostId === user.id;
   
       socket.leave(channel);
-      const wentOffline = roomPresence.remove(roomId, user.id, socket.id);
+      const wentOffline = await roomPresence.remove(roomId, user.id, socket.id);
   
       if (leaveMembership) {
         await roomService.leave(user.id, roomId);
@@ -172,8 +172,8 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
     }
   });
 
-  socket.on("disconnect", () => {
-    const changes = roomPresence.removeSocket(socket.id, user.id);
+  socket.on("disconnect", async() => {
+    const changes = await roomPresence.removeSocket(socket.id, user.id);
   
     for (const { roomId, userWentOffline } of changes) {
       if (!userWentOffline) continue;

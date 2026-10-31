@@ -3,11 +3,13 @@ Directory structure:
     ├── docker-compose.yml
     ├── package.json
     ├── tsconfig.base.json
+    ├── .env.example
     ├── apps/
     │   └── api/
     │       ├── package.json
     │       ├── prisma.config.ts
     │       ├── tsconfig.json
+    │       ├── .env.example
     │       ├── prisma/
     │       │   ├── schema.prisma
     │       │   └── migrations/
@@ -22,7 +24,8 @@ Directory structure:
     │           │   └── logger.ts
     │           ├── infrastructure/
     │           │   ├── prisma.ts
-    │           │   └── ready.ts
+    │           │   ├── ready.ts
+    │           │   └── redis.ts
     │           ├── middlewares/
     │           │   ├── auth.middleware.ts
     │           │   ├── cors.middleware.ts
@@ -50,6 +53,14 @@ Directory structure:
     │           │   │   ├── playback.container.ts
     │           │   │   ├── playback.service.ts
     │           │   │   └── playback.types.ts
+    │           │   ├── realtime/
+    │           │   │   ├── chat-handlers.ts
+    │           │   │   ├── host-lifecycle.ts
+    │           │   │   ├── playback-handlers.ts
+    │           │   │   ├── room-handlers.ts
+    │           │   │   ├── room-presence.ts
+    │           │   │   ├── socket-auth.ts
+    │           │   │   └── socket-server.ts
     │           │   └── room/
     │           │       ├── room.container.ts
     │           │       ├── room.controller.ts
@@ -61,14 +72,6 @@ Directory structure:
     │           │       ├── room.schema.ts
     │           │       ├── room.service.ts
     │           │       └── room.types.ts
-    │           ├── realtime/
-    │           │   ├── chat-handlers.ts
-    │           │   ├── host-lifecycle.ts
-    │           │   ├── playback-handlers.ts
-    │           │   ├── room-handlers.ts
-    │           │   ├── room-presence.ts
-    │           │   ├── socket-auth.ts
-    │           │   └── socket-server.ts
     │           └── types/
     │               └── express.d.ts
     └── packages/
@@ -282,6 +285,29 @@ FILE: tsconfig.base.json
 
 
 ================================================
+FILE: .env.example
+================================================
+NODE_ENV=development
+PORT=4000
+LOG_LEVEL=info
+
+# Database
+DATABASE_URL=postgresql://syncstream:syncstream@localhost:5433/syncstream?schema=public
+
+# CORS â€” comma-separated origins
+CLIENT_ORIGINS=http://localhost:3000
+
+# Socket.IO
+SOCKET_PATH=/socket.io
+
+JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
+JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+BCRYPT_ROUNDS=12
+
+
+================================================
 FILE: apps/api/package.json
 ================================================
 {
@@ -298,31 +324,33 @@ FILE: apps/api/package.json
     "studio": "prisma studio"
   },
   "dependencies": {
-    "@syncstream/contracts": "*",
-    "@syncstream/shared-utils": "*",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "@syncstream/contracts": "*",
+    "@syncstream/shared-utils": "*",
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.3.0",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.2",
     "pg": "^8.16.0",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "socket.io": "^4.8.4",
-    "zod": "^4.6.7",
-    "bcryptjs": "^3.0.2",
-    "jsonwebtoken": "^9.0.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.15.29",
     "pino-pretty": "^13.0.0",
     "prisma": "^7.10.0",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.9"
+    "typescript": "^5.9.2"
   }
 }
 
@@ -357,6 +385,24 @@ FILE: apps/api/tsconfig.json
   },
   "include": ["src"]
 }
+
+
+================================================
+FILE: apps/api/.env.example
+================================================
+NODE_ENV=development
+PORT=4000
+LOG_LEVEL=info
+DATABASE_URL=postgresql://syncstream:syncstream@localhost:5433/syncstream?schema=public
+CLIENT_ORIGINS=http://localhost:3000
+SOCKET_PATH=/socket.io
+JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
+JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+BCRYPT_ROUNDS=12
+HOST_GRACE_MS=60000
+REDIS_URL=redis://localhost:6379
 
 
 ================================================
@@ -633,13 +679,13 @@ import { createApp } from "./app.js";
 import { config } from "./config/index.js";
 import { logger } from "./config/logger.js";
 import { prisma } from "./infrastructure/prisma.js";
-import { createSocketServer } from "./realtime/socket-server.js";
+import { closeRedis } from "./infrastructure/redis.js";
+import { createSocketServer } from "./modules/realtime/socket-server.js";
 
 async function main() {
   const app = createApp();
   const httpServer = createServer(app);
 
-  // Attach Socket.IO to the same HTTP server
   const io = createSocketServer(httpServer);
 
   httpServer.listen(config.PORT, () => {
@@ -650,12 +696,12 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info(`Shutting down API (${signal})`);
 
-    // Stop accepting new connections
     io.close();
 
     httpServer.close(async () => {
       try {
         await prisma.$disconnect();
+        await closeRedis();
         logger.info("API shutdown complete");
         process.exit(0);
       } catch (err) {
@@ -664,7 +710,6 @@ async function main() {
       }
     });
 
-    // Force exit if drain takes too long
     setTimeout(() => process.exit(1), 15_000).unref();
   };
 
@@ -699,7 +744,8 @@ const envSchema = z.object({
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
-    HOST_GRACE_MS: z.coerce.number().int().min(5_000).default(60_000),
+  HOST_GRACE_MS: z.coerce.number().int().min(5_000).default(60_000),
+  REDIS_URL: z.url().default("redis://localhost:6379"),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -819,6 +865,7 @@ FILE: apps/api/src/infrastructure/ready.ts
 ================================================
 import pg from "pg";
 import { config } from "../config/index.js";
+import { redis } from "./redis.js";
 
 export type ReadyCheck = {
   name: string;
@@ -854,12 +901,71 @@ async function checkPostgres(): Promise<ReadyCheck> {
   }
 }
 
+async function checkRedis(): Promise<ReadyCheck> {
+  const start = Date.now();
+  try {
+    const pong = await redis.ping();
+    return {
+      name: "redis",
+      ok: pong === "PONG",
+      latencyMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      name: "redis",
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function getReadyStatus(): Promise<ReadyResult> {
-  const pgCheck = await checkPostgres();
+  const [pgCheck, redisCheck] = await Promise.all([
+    checkPostgres(),
+    checkRedis(),
+  ]);
   return {
-    ready: pgCheck.ok,
-    checks: [pgCheck],
+    ready: pgCheck.ok && redisCheck.ok,
+    checks: [pgCheck, redisCheck],
   };
+}
+
+
+================================================
+FILE: apps/api/src/infrastructure/redis.ts
+================================================
+import {Redis} from "ioredis";
+import { config } from "../config/index.js";
+import { logger } from "../config/logger.js";
+
+/**
+ * Primary Redis client used by the application
+ * (presence, playback state, etc.).
+ */
+export const redis = new Redis(config.REDIS_URL, {
+  maxRetriesPerRequest: null, // required by @socket.io/redis-adapter
+  enableReadyCheck: true,
+  lazyConnect: false,
+});
+
+redis.on("connect", () => logger.info("Redis connected"));
+redis.on("ready", () => logger.info("Redis ready"));
+redis.on("error", (err) => logger.error({ err }, "Redis error"));
+redis.on("close", () => logger.warn("Redis connection closed"));
+
+/**
+ * Graceful shutdown helper.
+ */
+export async function closeRedis(): Promise<void> {
+  try {
+    await redis.quit();
+    logger.info("Redis disconnected");
+  } catch (err) {
+    logger.error({ err }, "Error closing Redis");
+    // force close if quit fails
+    redis.disconnect();
+  }
 }
 
 
@@ -1609,63 +1715,101 @@ import {
   PlaybackState,
   RoomRole,
 } from "@syncstream/contracts";
-import { RoomPlayback } from "./playback.types.js";
-import { ForbiddenError, ValidationError } from "@syncstream/shared-utils";
+import { ValidationError } from "@syncstream/shared-utils";
 import { assertCan } from "../room/room.permissions.js";
+import { redis } from "../../infrastructure/redis.js";
+import { logger } from "../../config/logger.js";
 
-const MAX_RECENT_COMMANDS = 64; // per room â€“ enough to stop network retries
+const MAX_RECENT_COMMANDS = 64;
+
+const STATE_KEY = (roomId: string) => `playback:room:${roomId}`;
+const CMDS_KEY = (roomId: string) => `playback:cmds:${roomId}`;
 
 /**
- * Single-process authoritative playback state.
- * Key = roomId.
+ * Atomic apply-command Lua script.
  *
- * Later (Phase 6) this Map moves behind Redis + Lua, but the public API
- * of the service stays the same.
+ * KEYS[1] = state key
+ * KEYS[2] = recent-commands set
+ * ARGV[1] = commandId
+ * ARGV[2] = new state JSON
+ * ARGV[3] = max recent commands
+ *
+ * Returns JSON:
+ *   { "duplicate": true,  "state": <current|null> }
+ *   { "duplicate": false, "state": <new> }
  */
+const APPLY_SCRIPT = `
+local stateKey = KEYS[1]
+local cmdsKey  = KEYS[2]
+local cmdId    = ARGV[1]
+local newJson  = ARGV[2]
+local maxCmds  = tonumber(ARGV[3])
+
+if redis.call("SISMEMBER", cmdsKey, cmdId) == 1 then
+  local current = redis.call("GET", stateKey)
+  return cjson.encode({
+    duplicate = true,
+    state     = current and cjson.decode(current) or cjson.null
+  })
+end
+
+redis.call("SET", stateKey, newJson)
+redis.call("SADD", cmdsKey, cmdId)
+
+local size = redis.call("SCARD", cmdsKey)
+if size > maxCmds then
+  local members = redis.call("SRANDMEMBER", cmdsKey, size - maxCmds)
+  if type(members) == "table" then
+    for _, m in ipairs(members) do
+      redis.call("SREM", cmdsKey, m)
+    end
+  end
+end
+
+return cjson.encode({
+  duplicate = false,
+  state     = cjson.decode(newJson)
+})
+`;
 
 export class PlaybackService {
-  private readonly states = new Map<string, RoomPlayback>();
-  /** roomId â†’ recent commandIds (for deduplication) */
-  private readonly recentCommands = new Map<string, Set<string>>();
-
-  /** Returns current state or null if the room has never selected a video. */
-  getState(roomId: string): PlaybackState | null {
-    const s = this.states.get(roomId);
-    return s ? { ...s } : null;
+  /** Current state or null if no video has been selected yet. */
+  async getState(roomId: string): Promise<PlaybackState | null> {
+    const raw = await redis.get(STATE_KEY(roomId));
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as PlaybackState;
+    } catch {
+      logger.error({ roomId }, "Corrupt playback state in Redis");
+      return null;
+    }
   }
 
   /**
    * Apply a host/co-host command.
    * Throws AppError subclasses on validation / permission failure.
    */
-  applyCommand(
+  async applyCommand(
     roomId: string,
-    userId: string,
+    _userId: string,
     role: RoomRole,
     cmd: PlaybackCommand,
-  ) {
+  ): Promise<{ state: PlaybackState; duplicate: boolean }> {
     // 1. Permission
     assertCan(role, "PLAYBACK_CONTROL");
-    // 2. Deduplication
-    if (this.isDuplicate(roomId, cmd.commandId)) {
-      const current = this.states.get(roomId);
-      if (!current) {
-        // very unlikely â€“ command was accepted earlier but state gone
-        throw new ValidationError("Duplicate command but no state exists");
-      }
-      return { state: { ...current }, duplicate: true };
-    }
-    const now = Date.now();
-    let current = this.states.get(roomId);
 
-    // 3. State transition
-    let next: RoomPlayback;
+    // 2. Load current state for transition logic
+    const current = await this.getState(roomId);
+    const now = Date.now();
+
+    // 3. Compute next state (pure)
+    let next: PlaybackState;
+
     switch (cmd.action) {
       case "CHANGE_VIDEO": {
         if (!cmd.videoId) {
           throw new ValidationError("videoId is required for CHANGE_VIDEO");
         }
-
         next = {
           videoId: cmd.videoId,
           status: "PAUSED",
@@ -1680,8 +1824,6 @@ export class PlaybackService {
         if (!current) {
           throw new ValidationError("No video selected â€“ CHANGE_VIDEO first");
         }
-        // If already playing we still accept the command (idempotent) but
-        // re-anchor the position so late clients stay in sync.
         const position =
           cmd.position !== undefined
             ? cmd.position
@@ -1724,59 +1866,55 @@ export class PlaybackService {
           position: cmd.position,
           updatedAt: now,
           sequence: current.sequence + 1,
-          // keep current status (playing or paused)
         };
         break;
       }
       default: {
-        // exhaustive check
         const _exhaustive: never = cmd.action;
         throw new ValidationError(`Unknown action: ${_exhaustive}`);
       }
     }
-    // 4. Persist + remember commandId
-    this.states.set(roomId, next);
-    this.rememberCommand(roomId, cmd.commandId);
 
-    return { state: { ...next }, duplicate: false };
-  }
-  /** Remove state when a room is deleted (called from room service later). */
-  clearRoom(roomId: string): void {
-    this.states.delete(roomId);
-    this.recentCommands.delete(roomId);
+    // 4. Atomic commit via Lua
+    const resultJson = (await redis.eval(
+      APPLY_SCRIPT,
+      2,
+      STATE_KEY(roomId),
+      CMDS_KEY(roomId),
+      cmd.commandId,
+      JSON.stringify(next),
+      String(MAX_RECENT_COMMANDS),
+    )) as string;
+
+    const result = JSON.parse(resultJson) as {
+      duplicate: boolean;
+      state: PlaybackState | null;
+    };
+
+    if (result.duplicate) {
+      if (!result.state) {
+        throw new ValidationError("Duplicate command but no state exists");
+      }
+      return { state: result.state, duplicate: true };
+    }
+
+    return { state: result.state as PlaybackState, duplicate: false };
   }
 
-  // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /** Called when a room is deleted. */
+  async clearRoom(roomId: string): Promise<void> {
+    await redis.del(STATE_KEY(roomId), CMDS_KEY(roomId));
+  }
 
   /**
-   * Expected playback position at time `now` according to the formula:
-   *   PLAYING â†’ position + rate * (now - updatedAt) / 1000
-   *   PAUSED  â†’ position
+   * Expected playback position at time `now`.
    */
   expectedPosition(state: PlaybackState, now: number): number {
     if (state.status === "PAUSED") return state.position;
     const elapsedSec = (now - state.updatedAt) / 1000;
     return Math.max(0, state.position + state.playbackRate * elapsedSec);
   }
-  private isDuplicate(roomId: string, commandId: string): boolean {
-    const set = this.recentCommands.get(roomId);
-    return set ? set.has(commandId) : false;
-  }
-  private rememberCommand(roomId: string, commandId: string): void {
-    let set = this.recentCommands.get(roomId);
-    if (!set) {
-      set = new Set();
-      this.recentCommands.set(roomId, set);
-    }
-    set.add(commandId);
-    // simple bound â€“ drop oldest when over limit (Set iteration order is insertion order)
-    if (set.size > MAX_RECENT_COMMANDS) {
-      const first = set.values().next().value;
-      if (first !== undefined) set.delete(first);
-    }
-  }
 }
-
 
 
 ================================================
@@ -1796,11 +1934,1042 @@ export type ApplyCommandResult = {
 
 
 ================================================
+FILE: apps/api/src/modules/realtime/chat-handlers.ts
+================================================
+  import type { Server, Socket } from "socket.io";
+  import {
+    ChatSendPayloadSchema,
+    ChatHistoryPayloadSchema,
+    ReactionPayloadSchema,
+    TypingPayloadSchema,
+    type ClientToServerEvents,
+    type ServerToClientEvents,
+    type InterServerEvents,
+    type SocketData,
+  } from "@syncstream/contracts";
+  import { AppError } from "@syncstream/shared-utils";
+  import { chatService } from "../chat/chat.container.js";
+  import { roomService } from "../room/room.container.js";
+  import { socketRoomName } from "../room/room.helper.js";
+  import { logger } from "../../config/logger.js";
+  
+  type IoServer = Server<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+  >;
+  type AppSocket = Socket<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+  >;
+  
+  /** Simple per-socket rate limit: max N events per window. */
+  function createRateLimiter(max: number, windowMs: number) {
+    const hits = new Map<string, number[]>();
+    return (key: string): boolean => {
+      const now = Date.now();
+      const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+      if (arr.length >= max) {
+        hits.set(key, arr);
+        return false;
+      }
+      arr.push(now);
+      hits.set(key, arr);
+      return true;
+    };
+  }
+  
+  const chatRateOk = createRateLimiter(20, 10_000);   // 20 msgs / 10s
+  const reactionRateOk = createRateLimiter(30, 10_000);
+  const typingRateOk = createRateLimiter(10, 5_000);
+  
+  function emitChatError(
+    socket: AppSocket,
+    err: unknown,
+    roomId?: string,
+    clientMessageId?: string,
+  ) {
+    if (err instanceof AppError) {
+      socket.emit("chat:error", {
+        code: err.code,
+        message: err.message,
+        roomId,
+        clientMessageId,
+      });
+      return;
+    }
+    logger.error("chat handler error", { err });
+    socket.emit("chat:error", {
+      code: "INTERNAL_ERROR",
+      message: "Unexpected chat error",
+      roomId,
+      clientMessageId,
+    });
+  }
+  
+  export function registerChatHandlers(io: IoServer, socket: AppSocket) {
+    const user = socket.data.user;
+    if (!user) return;
+  
+    // â”€â”€ send message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    socket.on("chat:send", async (raw) => {
+      let roomId: string | undefined;
+      let clientMessageId: string | undefined;
+      try {
+        const parsed = ChatSendPayloadSchema.safeParse(raw);
+        if (!parsed.success) {
+          socket.emit("chat:error", {
+            code: "BAD_REQUEST",
+            message: parsed.error.issues.map((i) => i.message).join(", "),
+          });
+          return;
+        }
+        const { roomId: rid, content, clientMessageId: cid } = parsed.data;
+        roomId = rid;
+        clientMessageId = cid;
+  
+        if (!chatRateOk(`${socket.id}:chat`)) {
+          socket.emit("chat:error", {
+            code: "RATE_LIMITED",
+            message: "Too many messages; slow down",
+            roomId,
+            clientMessageId,
+          });
+          return;
+        }
+  
+        // Persist first
+        const view = await chatService.send(user.id, rid, content, cid);
+  
+        // Then broadcast to the Socket.IO room only
+        const channel = socketRoomName(rid);
+        io.to(channel).emit("chat:message", view);
+  
+        logger.info("chat:send ok", {
+          roomId: rid,
+          userId: user.id,
+          messageId: view.id,
+        });
+      } catch (err) {
+        emitChatError(socket, err, roomId, clientMessageId);
+      }
+    });
+  
+    // â”€â”€ history (on demand / reconnect) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    socket.on("chat:history", async (raw) => {
+      try {
+        const parsed = ChatHistoryPayloadSchema.safeParse(raw);
+        if (!parsed.success) {
+          socket.emit("chat:error", {
+            code: "BAD_REQUEST",
+            message: parsed.error.issues.map((i) => i.message).join(", "),
+          });
+          return;
+        }
+        const { roomId, cursor, limit } = parsed.data;
+        const result = await chatService.history(user.id, roomId, { cursor, limit });
+        socket.emit("chat:history", {
+          roomId,
+          messages: result.messages,
+          nextCursor: result.nextCursor,
+        });
+      } catch (err) {
+        emitChatError(
+          socket,
+          err,
+          typeof raw === "object" && raw && "roomId" in raw
+            ? String((raw as { roomId?: string }).roomId)
+            : undefined,
+        );
+      }
+    });
+  
+    // â”€â”€ reaction (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    socket.on("reaction:send", async (raw) => {
+      try {
+        const parsed = ReactionPayloadSchema.safeParse(raw);
+        if (!parsed.success) return;
+  
+        const { roomId, emoji } = parsed.data;
+        if (!reactionRateOk(`${socket.id}:reaction`)) return;
+  
+        await roomService.assertMember(roomId, user.id);
+  
+        io.to(socketRoomName(roomId)).emit("reaction:new", {
+          roomId,
+          userId: user.id,
+          name: user.name,
+          emoji,
+          at: Date.now(),
+        });
+      } catch (err) {
+        // silent for reactions â€“ do not spam chat:error
+        logger.debug("reaction rejected", { err });
+      }
+    });
+  
+    // â”€â”€ typing (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    socket.on("typing:update", async (raw) => {
+      try {
+        const parsed = TypingPayloadSchema.safeParse(raw);
+        if (!parsed.success) return;
+  
+        const { roomId, isTyping } = parsed.data;
+        if (!typingRateOk(`${socket.id}:typing`)) return;
+  
+        await roomService.assertMember(roomId, user.id);
+  
+        // do not echo back to sender
+        socket.to(socketRoomName(roomId)).emit("typing:update", {
+          roomId,
+          userId: user.id,
+          name: user.name,
+          isTyping,
+        });
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+
+================================================
+FILE: apps/api/src/modules/realtime/host-lifecycle.ts
+================================================
+import { logger } from "../../config/logger.js";
+import { roomService } from "../room/room.container.js";
+import { roomPresence } from "./room-presence.js";
+import { socketRoomName } from "../room/room.helper.js";
+import type { Server } from "socket.io";
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData,
+} from "@syncstream/contracts";
+import { config } from "../../config/index.js";
+
+type IoServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+
+type Pending = {
+  timer: NodeJS.Timeout;
+  hostId: string;
+};
+
+class HostLifecycle {
+  private readonly pending = new Map<string, Pending>(); // roomId â†’ pending
+
+  /**
+   * Call when host presence goes offline in a room.
+   */
+  onHostWentOffline(io: IoServer, roomId: string, hostId: string) {
+    this.cancel(roomId); // reset if already pending
+
+    const timer = setTimeout(() => {
+      void this.expire(io, roomId, hostId);
+    }, config.HOST_GRACE_MS);
+    // Don't keep process alive solely for grace timers
+    timer.unref?.();
+
+    this.pending.set(roomId, { timer, hostId });
+    logger.info("host grace started", { roomId, hostId, graceMs: config.HOST_GRACE_MS });
+  }
+
+  /**
+   * Call when host presence becomes online again.
+   */
+  onHostCameOnline(roomId: string, hostId: string) {
+    const p = this.pending.get(roomId);
+    if (!p || p.hostId !== hostId) return;
+    this.cancel(roomId);
+    logger.info("host grace cancelled (reconnected)", { roomId, hostId });
+  }
+
+  cancel(roomId: string) {
+    const p = this.pending.get(roomId);
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pending.delete(roomId);
+  }
+
+  private async expire(io: IoServer, roomId: string, hostId: string) {
+    this.pending.delete(roomId);
+
+    // Host came back on another code path?
+    if (await roomPresence.isOnline(roomId, hostId)) {
+      logger.info("host grace expired but host online; skip", { roomId, hostId });
+      return;
+    }
+
+    try {
+      const members = await roomService.buildMemberList(roomId);
+      // Prefer online CO_HOST, then any online non-host member
+      const candidate =
+        members.find((m) => m.online && m.role === "CO_HOST" && m.userId !== hostId) ??
+        members.find((m) => m.online && m.userId !== hostId);
+
+      if (!candidate) {
+        logger.warn("host grace expired; no eligible member", { roomId, hostId });
+        // Optional: mark room inactive / delete â€” product choice
+        return;
+      }
+
+      await roomService.forceTransferHost(roomId, hostId, candidate.userId);
+      const updated = await roomService.buildMemberList(roomId);
+      const channel = socketRoomName(roomId);
+
+      io.to(channel).emit("room:host-changed", {
+        roomId,
+        previousHostId: hostId,
+        newHostId: candidate.userId,
+        reason: "DISCONNECT_GRACE",
+      });
+      io.to(channel).emit("room:members", { roomId, members: updated });
+
+      logger.info("host transferred after grace", {
+        roomId,
+        previousHostId: hostId,
+        newHostId: candidate.userId,
+      });
+    } catch (err) {
+      logger.error("host grace transfer failed", { err, roomId, hostId });
+    }
+  }
+}
+
+export const hostLifecycle = new HostLifecycle();
+
+
+================================================
+FILE: apps/api/src/modules/realtime/playback-handlers.ts
+================================================
+import type { Server, Socket } from "socket.io";
+import {
+  PlaybackCommandSchema,
+  PlaybackSyncPayloadSchema,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+  type InterServerEvents,
+  type SocketData,
+} from "@syncstream/contracts";
+import { AppError } from "@syncstream/shared-utils";
+import { logger } from "../../config/logger.js";
+import { roomService } from "../room/room.container.js";
+import { playbackService } from "../playback/playback.container.js";
+import { socketRoomName } from "../room/room.helper.js";
+
+
+type IoServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+type AppSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+function emitPlaybackError(
+  socket: AppSocket,
+  err: unknown,
+  roomId?: string,
+  commandId?: string,
+) {
+  if (err instanceof AppError) {
+    socket.emit("playback:error", {
+      code: err.code,
+      message: err.message,
+      roomId,
+      commandId,
+    });
+    return;
+  }
+  logger.error("playback handler error", { err });
+  socket.emit("playback:error", {
+    code: "INTERNAL_ERROR",
+    message: "Unexpected playback error",
+    roomId,
+    commandId,
+  });
+}
+
+export function registerPlaybackHandlers(io: IoServer, socket: AppSocket) {
+  const user = socket.data.user;
+  if (!user) return;
+
+  // â”€â”€ Client asks for current state (reconnect / late join) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("playback:sync", async (raw) => {
+    try {
+      const parsed = PlaybackSyncPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("playback:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+
+      const { roomId } = parsed.data;
+
+      // Must be a member
+      await roomService.assertMember(roomId, user.id);
+
+      const state = await playbackService.getState(roomId);
+
+      if (!state) {
+        // No video has been selected yet â€“ still a valid reply
+        socket.emit("playback:snapshot", {
+          roomId,
+          state: {
+            videoId: "",
+            status: "PAUSED",
+            position: 0,
+            updatedAt: Date.now(),
+            playbackRate: 1,
+            sequence: 0,
+          },
+        });
+        return;
+      }
+
+      socket.emit("playback:snapshot", { roomId, state });
+    } catch (err) {
+      emitPlaybackError(
+        socket,
+        err,
+        typeof raw === "object" && raw && "roomId" in raw
+          ? String((raw as { roomId?: string }).roomId)
+          : undefined,
+      );
+    }
+  });
+
+  // â”€â”€ Host / co-host issues a command â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on("playback:command", async (raw) => {
+    let commandId: string | undefined;
+    let roomId: string | undefined;
+
+    try {
+      const parsed = PlaybackCommandSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("playback:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+
+      const cmd = parsed.data;
+      commandId = cmd.commandId;
+      roomId = cmd.roomId;
+
+      // Membership + role
+      const membership = await roomService.assertMember(roomId, user.id);
+
+      const result = await playbackService.applyCommand(
+        roomId,
+        user.id,
+        membership.role,
+        cmd,
+      );
+
+      // Even on duplicate we still broadcast the current state so the
+      // client that retried gets the latest sequence.
+      const channel = socketRoomName(roomId);
+      io.to(channel).emit("playback:state", {
+        roomId,
+        state: result.state,
+      });
+
+      logger.info("playback:command accepted", {
+        roomId,
+        userId: user.id,
+        action: cmd.action,
+        sequence: result.state.sequence,
+        duplicate: result.duplicate,
+      });
+    } catch (err) {
+      emitPlaybackError(socket, err, roomId, commandId);
+    }
+  });
+}
+
+
+================================================
+FILE: apps/api/src/modules/realtime/room-handlers.ts
+================================================
+import type { Server, Socket } from "socket.io";
+import {
+  RoomJoinPayloadSchema,
+  RoomLeavePayloadSchema,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+  type InterServerEvents,
+  type SocketData,
+  ChangeRolePayloadSchema,
+  RemoveMemberPayloadSchema,
+  TransferHostPayloadSchema,
+} from "@syncstream/contracts";
+import { AppError } from "@syncstream/shared-utils";
+import { roomService } from "../room/room.container.js";
+import { socketRoomName } from "../room/room.helper.js";
+import { roomPresence } from "./room-presence.js";
+import { logger } from "../../config/logger.js";
+import { playbackService } from "../playback/playback.container.js";
+import { hostLifecycle } from "./host-lifecycle.js";
+
+type IoServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+type AppSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+function emitRoomError(socket: AppSocket, err: unknown, roomId?: string) {
+  if (err instanceof AppError) {
+    socket.emit("room:error", {
+      code: err.code,
+      message: err.message,
+      roomId,
+    });
+    return;
+  }
+  logger.error( "room handler error",{ err });
+  socket.emit("room:error", {
+    code: "INTERNAL_ERROR",
+    message: "Unexpected room error",
+    roomId,
+  });
+}
+
+export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
+  const user = socket.data.user;
+  if (!user) return;
+
+  socket.on("room:join", async (raw) => {
+    try {
+      const parsed = RoomJoinPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("room:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+
+      const result = await roomService.join(user.id, {
+        roomId: parsed.data.roomId,
+        code: parsed.data.code,
+      });
+
+      const roomId = result.room.id;
+      const channel = socketRoomName(roomId);
+
+      socket.join(channel);
+      await roomPresence.add(roomId, user.id, socket.id);
+      const room = result.room;
+      if (room.hostId === user.id) {
+        hostLifecycle.onHostCameOnline(roomId, user.id);
+      }
+
+      // Refresh members with presence
+      const members = await roomService.buildMemberList(roomId);
+
+      socket.emit("room:state", {
+        room: result.room,
+        members,
+      });
+
+      socket.emit("room:members", { roomId, members });
+      const playbackState =await playbackService.getState(roomId);
+            if (playbackState) {
+              socket.emit("playback:snapshot", {
+                roomId,
+                state: playbackState,
+              });
+            }
+      if (result.created) {
+        const me = members.find((m) => m.userId === user.id);
+        if (me) {
+          socket.to(channel).emit("room:member-joined", {
+            roomId,
+            member: me,
+          });
+        }
+        socket.to(channel).emit("room:members", { roomId, members });
+      } else {
+        // Reconnect / second tab: broadcast updated online flags
+        socket.to(channel).emit("room:members", { roomId, members });
+      }
+
+      logger.info("room:join ok", {
+        roomId,
+        userId: user.id,
+        socketId: socket.id,
+        created: result.created,
+      });
+    } catch (err) {
+      emitRoomError(socket, err, typeof raw === "object" && raw && "roomId" in raw
+        ? String((raw as { roomId?: string }).roomId)
+        : undefined);
+    }
+  });
+
+  socket.on("room:leave", async (raw) => {
+    try {
+      const parsed = RoomLeavePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("room:error", {
+          code: "BAD_REQUEST",
+          message: "Invalid leave payload",
+        });
+        return;
+      }
+  
+      const { roomId, leaveMembership } = parsed.data;
+      const channel = socketRoomName(roomId);
+  
+      const hostId = await roomService.getRoomHostId(roomId);
+      const wasHost = hostId === user.id;
+  
+      socket.leave(channel);
+      const wentOffline = await roomPresence.remove(roomId, user.id, socket.id);
+  
+      if (leaveMembership) {
+        await roomService.leave(user.id, roomId);
+        io.to(channel).emit("room:member-left", { roomId, userId: user.id });
+        if (wasHost) hostLifecycle.cancel(roomId);
+      } else if (wentOffline) {
+        const members = await roomService.buildMemberList(roomId);
+        io.to(channel).emit("room:members", { roomId, members });
+        if (wasHost) {
+          hostLifecycle.onHostWentOffline(io, roomId, user.id);
+        }
+      }
+      // else: still online on another socket â€” no broadcast needed
+  
+      logger.info("room:leave ok", {
+        roomId,
+        userId: user.id,
+        leaveMembership,
+        wentOffline,
+      });
+    } catch (err) {
+      emitRoomError(
+        socket,
+        err,
+        typeof raw === "object" && raw && "roomId" in raw
+          ? String((raw as { roomId?: string }).roomId)
+          : undefined,
+        
+      );
+    }
+  });
+
+  socket.on("disconnect", async() => {
+    const changes = await roomPresence.removeSocket(socket.id, user.id);
+  
+    for (const { roomId, userWentOffline } of changes) {
+      if (!userWentOffline) continue;
+  
+      void (async () => {
+        try {
+          const members = await roomService.buildMemberList(roomId);
+          io.to(socketRoomName(roomId)).emit("room:members", {
+            roomId,
+            members,
+          });
+  
+          const hostId = await roomService.getRoomHostId(roomId);
+          if (hostId === user.id) {
+            hostLifecycle.onHostWentOffline(io, roomId, user.id);
+          }
+        } catch (err) {
+          logger.warn(
+            { err, roomId },
+            "failed to broadcast presence on disconnect",
+          );
+        }
+      })();
+    }
+  });
+  socket.on("room:transfer-host", async (raw) => {
+    let roomId: string | undefined;
+    try {
+      const parsed = TransferHostPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+        socket.emit("room:error", {
+          code: "BAD_REQUEST",
+          message: parsed.error.issues.map((i) => i.message).join(", "),
+        });
+        return;
+      }
+      roomId = parsed.data.roomId;
+          const { toUserId } = parsed.data;
+      const result = await roomService.transferHost(user.id, roomId, toUserId);
+      const channel = socketRoomName(roomId);
+  
+      hostLifecycle.cancel(roomId); // voluntary transfer clears grace
+  
+      io.to(channel).emit("room:host-changed", {
+        roomId,
+        previousHostId: result.previousHostId,
+        newHostId: result.newHostId,
+        reason: "TRANSFER",
+      });
+      io.to(channel).emit("room:members", { roomId, members: result.members });
+    } catch (err) {
+      emitRoomError(socket, err, roomId);
+    }
+  });
+  
+  socket.on("room:remove-member", async (raw) => {
+    let roomId: string | undefined;
+    try {
+      const parsed = RemoveMemberPayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+            socket.emit("room:error", {
+              code: "BAD_REQUEST",
+              message: parsed.error.issues.map((i) => i.message).join(", "),
+            });
+            return;
+          }
+          roomId = parsed.data.roomId;
+              const targetId = parsed.data.userId;  
+      await roomService.removeMember(user.id, roomId, targetId);
+  
+      const channel = socketRoomName(roomId);
+      io.to(channel).emit("room:member-removed", {
+        roomId,
+        userId: targetId,
+        removedBy: user.id,
+      });
+      const members = await roomService.buildMemberList(roomId);
+      io.to(channel).emit("room:members", { roomId, members });
+  
+      // Force target sockets out of the channel (best-effort single process)
+      // Optional: track userId â†’ socketIds if you need hard kick
+    } catch (err) {
+      emitRoomError(socket, err,roomId);
+    }
+  });
+  
+  socket.on("room:change-role", async (raw) => {
+    let roomId: string | undefined;
+    try {
+      const parsed = ChangeRolePayloadSchema.safeParse(raw);
+      if (!parsed.success) {
+            socket.emit("room:error", {
+              code: "BAD_REQUEST",
+              message: parsed.error.issues.map((i) => i.message).join(", "),
+            });
+            return;
+          }
+          roomId = parsed.data.roomId;
+          const { userId: targetId, role } = parsed.data;
+  
+      const members = await roomService.changeRole(
+        user.id,
+        roomId,
+        targetId,
+        role,
+      );
+      const channel = socketRoomName(roomId);
+      io.to(channel).emit("room:member-role-changed", {
+        roomId,
+        userId: targetId,
+        role,
+      });
+      io.to(channel).emit("room:members", { roomId, members });
+    } catch (err) {
+      emitRoomError(socket, err,roomId);
+    }
+  });
+}
+
+
+================================================
+FILE: apps/api/src/modules/realtime/room-presence.ts
+================================================
+/**
+ * Multi-instance presence backed by Redis.
+ *
+ * Key layout:
+ *   presence:room:{roomId}          Hash  â†’ userId â†’ JSON({ sockets: string[], lastSeen: number })
+ *   presence:socket:{socketId}      Set   â†’ roomIds this socket belongs to
+ *
+ * A user is considered online in a room while their entry still contains
+ * at least one live socketId.
+ */
+
+import { redis } from "../../infrastructure/redis.js";
+import { logger } from "../../config/logger.js";
+
+const ROOM_KEY = (roomId: string) => `presence:room:${roomId}`;
+const SOCKET_KEY = (socketId: string) => `presence:socket:${socketId}`;
+
+type PresenceEntry = {
+  sockets: string[];
+  lastSeen: number;
+};
+
+class RoomPresence {
+  async add(roomId: string, userId: string, socketId: string): Promise<void> {
+    const key = ROOM_KEY(roomId);
+    const raw = await redis.hget(key, userId);
+    const data: PresenceEntry = raw
+      ? JSON.parse(raw)
+      : { sockets: [], lastSeen: Date.now() };
+
+    if (!data.sockets.includes(socketId)) {
+      data.sockets.push(socketId);
+    }
+    data.lastSeen = Date.now();
+
+    await redis
+      .multi()
+      .hset(key, userId, JSON.stringify(data))
+      .sadd(SOCKET_KEY(socketId), roomId)
+      .exec();
+  }
+
+  /**
+   * Remove one socket from a room.
+   * @returns true if the user became offline in that room
+   */
+  async remove(
+    roomId: string,
+    userId: string,
+    socketId: string,
+  ): Promise<boolean> {
+    const key = ROOM_KEY(roomId);
+    const raw = await redis.hget(key, userId);
+    if (!raw) return false;
+
+    const data: PresenceEntry = JSON.parse(raw);
+    data.sockets = data.sockets.filter((s) => s !== socketId);
+
+    const pipeline = redis.multi();
+    pipeline.srem(SOCKET_KEY(socketId), roomId);
+
+    if (data.sockets.length === 0) {
+      pipeline.hdel(key, userId);
+      await pipeline.exec();
+      return true; // user went offline
+    }
+
+    data.lastSeen = Date.now();
+    pipeline.hset(key, userId, JSON.stringify(data));
+    await pipeline.exec();
+    return false;
+  }
+
+  /**
+   * On disconnect: drop the socket from every room it was in.
+   * Returns the list of rooms where the user became offline.
+   */
+  async removeSocket(
+    socketId: string,
+    userId: string,
+  ): Promise<Array<{ roomId: string; userWentOffline: boolean }>> {
+    const roomIds = await redis.smembers(SOCKET_KEY(socketId));
+    if (roomIds.length === 0) return [];
+
+    const result: Array<{ roomId: string; userWentOffline: boolean }> = [];
+
+    for (const roomId of roomIds) {
+      const userWentOffline = await this.remove(roomId, userId, socketId);
+      result.push({ roomId, userWentOffline });
+    }
+
+    // clean up the socket key itself
+    await redis.del(SOCKET_KEY(socketId));
+    return result;
+  }
+
+  async isOnline(roomId: string, userId: string): Promise<boolean> {
+    const raw = await redis.hget(ROOM_KEY(roomId), userId);
+    if (!raw) return false;
+    const data: PresenceEntry = JSON.parse(raw);
+    return data.sockets.length > 0;
+  }
+
+  async getOnlineUserIds(roomId: string): Promise<Set<string>> {
+    const all = await redis.hgetall(ROOM_KEY(roomId));
+    return new Set(Object.keys(all));
+  }
+
+  /** Debug helper â€“ not used in production paths */
+  async debugRoom(roomId: string): Promise<Record<string, PresenceEntry>> {
+    const all = await redis.hgetall(ROOM_KEY(roomId));
+    const out: Record<string, PresenceEntry> = {};
+    for (const [uid, raw] of Object.entries(all)) {
+      out[uid] = JSON.parse(raw);
+    }
+    return out;
+  }
+}
+
+export const roomPresence = new RoomPresence();
+
+
+================================================
+FILE: apps/api/src/modules/realtime/socket-auth.ts
+================================================
+import { Server, Socket } from "socket.io";
+import { verifyAccessToken } from "../auth/auth.helper.js";
+import { authService } from "../auth/auth.container.js";
+import { SafeUser } from "../auth/auth.types.js";
+import { logger } from "../../config/logger.js";
+/**
+ * Handshake auth: client must send
+ *   io(url, { auth: { token: accessToken } })
+ * Do NOT put the token in the query string.
+ */
+export async function verifySocketIdentity(socket: Socket): Promise<SafeUser> {
+  const token =
+    (socket.handshake.auth as { token?: string } | undefined)?.token ??
+    extractBearer(socket.handshake.headers.authorization);
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+
+  const payload = verifyAccessToken(token);
+  return authService.resolveUser(payload.sub);
+}
+
+function extractBearer(header: string | string[] | undefined): string | null {
+  if (!header || Array.isArray(header)) return null;
+  if (!header.startsWith("Bearer ")) return null;
+  return header.slice(7).trim() || null;
+}
+
+export function registerSocketAuth(io: Server) {
+  io.use(async (socket, next) => {
+    try {
+      const user = await verifySocketIdentity(socket);
+      socket.data.user = user;
+      next();
+    } catch (err) {
+      logger.warn("Socket auth failed", {
+        socketId: socket.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+
+      next(new Error("Unauthorized"));
+    }
+  });
+}
+
+
+
+================================================
+FILE: apps/api/src/modules/realtime/socket-server.ts
+================================================
+import type { Server as HttpServer } from "node:http";
+import { Server } from "socket.io";
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData,
+} from "@syncstream/contracts";
+import { ClientPingSchema } from "@syncstream/contracts";
+import { config } from "../../config/index.js";
+import { logger } from "../../config/logger.js";
+import { registerSocketAuth } from "./socket-auth.js";
+import { registerRoomHandlers } from "./room-handlers.js";
+import { registerPlaybackHandlers } from "./playback-handlers.js";
+import { registerChatHandlers } from "./chat-handlers.js";
+import { redis } from "../../infrastructure/redis.js";
+import { createAdapter } from "@socket.io/redis-adapter";
+
+export function createSocketServer(httpServer: HttpServer) {
+  const pubClient = redis.duplicate();
+    const subClient = redis.duplicate();
+  const io = new Server<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+  >(httpServer, {
+    path: config.SOCKET_PATH,
+    cors: {
+      origin: config.CLIENT_ORIGINS,
+      credentials: true,
+    
+    },
+    adapter: createAdapter(pubClient, subClient),
+  });
+
+  registerSocketAuth(io);
+
+  io.on("connection", (socket) => {
+    const user = socket.data.user;
+    logger.info("Socket connected", {
+      socketId: socket.id,
+      userId: user?.id,
+    });
+
+    socket.emit("server:hello", {
+      message: `Connected as ${user?.email ?? "unknown"}`,
+      serverTime: Date.now(),
+      socketId: socket.id,
+    });
+
+    socket.on("client:ping", (raw) => {
+      const parsed = ClientPingSchema.safeParse(raw);
+      if (!parsed.success) {
+        logger.warn("Invalid client:ping", { socketId: socket.id });
+        return;
+      }
+      socket.emit("server:pong", {
+        serverTime: Date.now(),
+        clientTime: parsed.data.clientTime,
+      });
+    });
+
+    registerRoomHandlers(io, socket);
+    registerPlaybackHandlers(io, socket);  
+   registerChatHandlers(io, socket); 
+
+    socket.on("disconnect", (reason) => {
+      logger.info("Socket disconnected", {
+        socketId: socket.id,
+        userId: user?.id,
+        reason,
+      });
+    });
+  });
+
+  return io;
+}
+
+
+================================================
 FILE: apps/api/src/modules/room/room.container.ts
 ================================================
 import { RoomRepository } from "./room.repository.js";
 import { RoomService } from "./room.service.js";
-import { roomPresence } from "../../realtime/room-presence.js";
+import { roomPresence } from "../realtime/room-presence.js";
 
 const roomRepository = new RoomRepository();
 export const roomService = new RoomService(roomRepository, roomPresence);
@@ -2357,8 +3526,8 @@ import { playbackService } from "../playback/playback.container.js";
 import { assertCan } from "./room.permissions.js";
 
 export type PresencePort = {
-  isOnline(roomId: string, userId: string): boolean;
-  getOnlineUserIds(roomId: string): Set<string>;
+  isOnline(roomId: string, userId: string): Promise<boolean>;
+    getOnlineUserIds(roomId: string): Promise<Set<string>>;
 };
 
 export class RoomService {
@@ -2395,19 +3564,26 @@ export class RoomService {
     };
   }
 
-  private toMemberViews(
+  private async toMemberViews(
     roomId: string,
     members: Awaited<ReturnType<RoomInterface["listMembers"]>>,
-  ): MemberView[] {
-    return members.map((m) => ({
-      userId: m.userId,
-      name: m.user.name,
-      avatarUrl: m.user.avatarUrl,
-      role: m.role,
-      online: this.presence.isOnline(roomId, m.userId),
-      joinedAt: m.joinedAt.toISOString(),
-    }));
+  ): Promise<MemberView[]> {
+    // We can still do this sequentially; for large rooms you could
+    // Promise.all the isOnline calls.
+    const views: MemberView[] = [];
+    for (const m of members) {
+      views.push({
+        userId: m.userId,
+        name: m.user.name,
+        avatarUrl: m.user.avatarUrl,
+        role: m.role,
+        online: await this.presence.isOnline(roomId, m.userId),
+        joinedAt: m.joinedAt.toISOString(),
+      });
+    }
+    return views;
   }
+  
 
   async create(hostId: string, body: CreateRoomBody) {
     const room = await this.repo.createRoomWithHost({
@@ -2469,7 +3645,7 @@ export class RoomService {
       }
       const { membership, created } = await this.repo.joinAsViewer(room.id, userId);
       const count = await this.repo.countMembers(room.id);
-      const members = this.toMemberViews(room.id, await this.repo.listMembers(room.id));
+      const members =await this.toMemberViews(room.id, await this.repo.listMembers(room.id));
       return {
         room: this.toRoomView(room, count, membership.role),
         members,
@@ -2485,7 +3661,7 @@ export class RoomService {
           // optional: still allow if already member even with wrong code
         }
         const count = await this.repo.countMembers(room.id);
-            const members = this.toMemberViews(room.id, await this.repo.listMembers(room.id));
+            const members = await this.toMemberViews(room.id, await this.repo.listMembers(room.id));
             return {
               room: this.toRoomView(room, count, existing.role),
               members,
@@ -2520,9 +3696,7 @@ export class RoomService {
         if (!room) throw new NotFoundError("Room", roomId);
     
         const membership = await this.repo.findMembership(roomId, userId);
-        if (!membership || membership.role !== "HOST") {
-          throw new ForbiddenError("Only the host can update room settings");
-        }
+        if (!membership) throw new ForbiddenError("You are not a member of this room");
     assertCan(membership.role, "UPDATE_ROOM");
         if (body.maxMembers !== undefined) {
               const count = await this.repo.countMembers(roomId);
@@ -2545,7 +3719,7 @@ export class RoomService {
       assertCan(membership.role, "DELETE_ROOM");
   
     await this.repo.deleteRoom(roomId);
-    playbackService.clearRoom(roomId);
+    await playbackService.clearRoom(roomId);
   }
   /** Used by socket layer after membership is confirmed. */
     async assertMember(roomId: string, userId: string) {
@@ -2705,995 +3879,6 @@ export type MemberView = {
   online: boolean;
   joinedAt: string;
 };
-
-
-================================================
-FILE: apps/api/src/realtime/chat-handlers.ts
-================================================
-import type { Server, Socket } from "socket.io";
-import {
-  ChatSendPayloadSchema,
-  ChatHistoryPayloadSchema,
-  ReactionPayloadSchema,
-  TypingPayloadSchema,
-  type ClientToServerEvents,
-  type ServerToClientEvents,
-  type InterServerEvents,
-  type SocketData,
-} from "@syncstream/contracts";
-import { AppError } from "@syncstream/shared-utils";
-import { chatService } from "../modules/chat/chat.container.js";
-import { roomService } from "../modules/room/room.container.js";
-import { socketRoomName } from "../modules/room/room.helper.js";
-import { logger } from "../config/logger.js";
-
-type IoServer = Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-type AppSocket = Socket<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-
-/** Simple per-socket rate limit: max N events per window. */
-function createRateLimiter(max: number, windowMs: number) {
-  const hits = new Map<string, number[]>();
-  return (key: string): boolean => {
-    const now = Date.now();
-    const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-    if (arr.length >= max) {
-      hits.set(key, arr);
-      return false;
-    }
-    arr.push(now);
-    hits.set(key, arr);
-    return true;
-  };
-}
-
-const chatRateOk = createRateLimiter(20, 10_000);   // 20 msgs / 10s
-const reactionRateOk = createRateLimiter(30, 10_000);
-const typingRateOk = createRateLimiter(10, 5_000);
-
-function emitChatError(
-  socket: AppSocket,
-  err: unknown,
-  roomId?: string,
-  clientMessageId?: string,
-) {
-  if (err instanceof AppError) {
-    socket.emit("chat:error", {
-      code: err.code,
-      message: err.message,
-      roomId,
-      clientMessageId,
-    });
-    return;
-  }
-  logger.error("chat handler error", { err });
-  socket.emit("chat:error", {
-    code: "INTERNAL_ERROR",
-    message: "Unexpected chat error",
-    roomId,
-    clientMessageId,
-  });
-}
-
-export function registerChatHandlers(io: IoServer, socket: AppSocket) {
-  const user = socket.data.user;
-  if (!user) return;
-
-  // â”€â”€ send message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  socket.on("chat:send", async (raw) => {
-    let roomId: string | undefined;
-    let clientMessageId: string | undefined;
-    try {
-      const parsed = ChatSendPayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-        socket.emit("chat:error", {
-          code: "BAD_REQUEST",
-          message: parsed.error.issues.map((i) => i.message).join(", "),
-        });
-        return;
-      }
-      const { roomId: rid, content, clientMessageId: cid } = parsed.data;
-      roomId = rid;
-      clientMessageId = cid;
-
-      if (!chatRateOk(`${socket.id}:chat`)) {
-        socket.emit("chat:error", {
-          code: "RATE_LIMITED",
-          message: "Too many messages; slow down",
-          roomId,
-          clientMessageId,
-        });
-        return;
-      }
-
-      // Persist first
-      const view = await chatService.send(user.id, rid, content, cid);
-
-      // Then broadcast to the Socket.IO room only
-      const channel = socketRoomName(rid);
-      io.to(channel).emit("chat:message", view);
-
-      logger.info("chat:send ok", {
-        roomId: rid,
-        userId: user.id,
-        messageId: view.id,
-      });
-    } catch (err) {
-      emitChatError(socket, err, roomId, clientMessageId);
-    }
-  });
-
-  // â”€â”€ history (on demand / reconnect) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  socket.on("chat:history", async (raw) => {
-    try {
-      const parsed = ChatHistoryPayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-        socket.emit("chat:error", {
-          code: "BAD_REQUEST",
-          message: parsed.error.issues.map((i) => i.message).join(", "),
-        });
-        return;
-      }
-      const { roomId, cursor, limit } = parsed.data;
-      const result = await chatService.history(user.id, roomId, { cursor, limit });
-      socket.emit("chat:history", {
-        roomId,
-        messages: result.messages,
-        nextCursor: result.nextCursor,
-      });
-    } catch (err) {
-      emitChatError(
-        socket,
-        err,
-        typeof raw === "object" && raw && "roomId" in raw
-          ? String((raw as { roomId?: string }).roomId)
-          : undefined,
-      );
-    }
-  });
-
-  // â”€â”€ reaction (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  socket.on("reaction:send", async (raw) => {
-    try {
-      const parsed = ReactionPayloadSchema.safeParse(raw);
-      if (!parsed.success) return;
-
-      const { roomId, emoji } = parsed.data;
-      if (!reactionRateOk(`${socket.id}:reaction`)) return;
-
-      await roomService.assertMember(roomId, user.id);
-
-      io.to(socketRoomName(roomId)).emit("reaction:new", {
-        roomId,
-        userId: user.id,
-        name: user.name,
-        emoji,
-        at: Date.now(),
-      });
-    } catch (err) {
-      // silent for reactions â€“ do not spam chat:error
-      logger.debug("reaction rejected", { err });
-    }
-  });
-
-  // â”€â”€ typing (ephemeral) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  socket.on("typing:update", async (raw) => {
-    try {
-      const parsed = TypingPayloadSchema.safeParse(raw);
-      if (!parsed.success) return;
-
-      const { roomId, isTyping } = parsed.data;
-      if (!typingRateOk(`${socket.id}:typing`)) return;
-
-      await roomService.assertMember(roomId, user.id);
-
-      // do not echo back to sender
-      socket.to(socketRoomName(roomId)).emit("typing:update", {
-        roomId,
-        userId: user.id,
-        name: user.name,
-        isTyping,
-      });
-    } catch {
-      // ignore
-    }
-  });
-}
-
-
-================================================
-FILE: apps/api/src/realtime/host-lifecycle.ts
-================================================
-import { logger } from "../config/logger.js";
-import { roomService } from "../modules/room/room.container.js";
-import { roomPresence } from "./room-presence.js";
-import { socketRoomName } from "../modules/room/room.helper.js";
-import type { Server } from "socket.io";
-import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData,
-} from "@syncstream/contracts";
-import { config } from "../config/index.js";
-
-type IoServer = Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-
-
-type Pending = {
-  timer: NodeJS.Timeout;
-  hostId: string;
-};
-
-class HostLifecycle {
-  private readonly pending = new Map<string, Pending>(); // roomId â†’ pending
-
-  /**
-   * Call when host presence goes offline in a room.
-   */
-  onHostWentOffline(io: IoServer, roomId: string, hostId: string) {
-    this.cancel(roomId); // reset if already pending
-
-    const timer = setTimeout(() => {
-      void this.expire(io, roomId, hostId);
-    }, config.HOST_GRACE_MS);
-    // Don't keep process alive solely for grace timers
-    timer.unref?.();
-
-    this.pending.set(roomId, { timer, hostId });
-    logger.info("host grace started", { roomId, hostId, graceMs: config.HOST_GRACE_MS });
-  }
-
-  /**
-   * Call when host presence becomes online again.
-   */
-  onHostCameOnline(roomId: string, hostId: string) {
-    const p = this.pending.get(roomId);
-    if (!p || p.hostId !== hostId) return;
-    this.cancel(roomId);
-    logger.info("host grace cancelled (reconnected)", { roomId, hostId });
-  }
-
-  cancel(roomId: string) {
-    const p = this.pending.get(roomId);
-    if (!p) return;
-    clearTimeout(p.timer);
-    this.pending.delete(roomId);
-  }
-
-  private async expire(io: IoServer, roomId: string, hostId: string) {
-    this.pending.delete(roomId);
-
-    // Host came back on another code path?
-    if (roomPresence.isOnline(roomId, hostId)) {
-      logger.info("host grace expired but host online; skip", { roomId, hostId });
-      return;
-    }
-
-    try {
-      const members = await roomService.buildMemberList(roomId);
-      // Prefer online CO_HOST, then any online non-host member
-      const candidate =
-        members.find((m) => m.online && m.role === "CO_HOST" && m.userId !== hostId) ??
-        members.find((m) => m.online && m.userId !== hostId);
-
-      if (!candidate) {
-        logger.warn("host grace expired; no eligible member", { roomId, hostId });
-        // Optional: mark room inactive / delete â€” product choice
-        return;
-      }
-
-      await roomService.forceTransferHost(roomId, hostId, candidate.userId);
-      const updated = await roomService.buildMemberList(roomId);
-      const channel = socketRoomName(roomId);
-
-      io.to(channel).emit("room:host-changed", {
-        roomId,
-        previousHostId: hostId,
-        newHostId: candidate.userId,
-        reason: "DISCONNECT_GRACE",
-      });
-      io.to(channel).emit("room:members", { roomId, members: updated });
-
-      logger.info("host transferred after grace", {
-        roomId,
-        previousHostId: hostId,
-        newHostId: candidate.userId,
-      });
-    } catch (err) {
-      logger.error("host grace transfer failed", { err, roomId, hostId });
-    }
-  }
-}
-
-export const hostLifecycle = new HostLifecycle();
-
-
-================================================
-FILE: apps/api/src/realtime/playback-handlers.ts
-================================================
-import {
-  ClientToServerEvents,
-  InterServerEvents,
-  PlaybackCommandSchema,
-  PlaybackSyncPayloadSchema,
-  ServerToClientEvents,
-  SocketData,
-} from "@syncstream/contracts";
-import { AppError } from "@syncstream/shared-utils";
-import { Server, Socket } from "socket.io";
-import { logger } from "../config/logger.js";
-import { roomService } from "../modules/room/room.container.js";
-import { playbackService } from "../modules/playback/playback.container.js";
-import { socketRoomName } from "../modules/room/room.helper.js";
-
-type IoServer = Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-type AppSocket = Socket<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-
-function emitPlaybackError(
-  socket: AppSocket,
-  err: unknown,
-  roomId?: string,
-  commandId?: string,
-) {
-  if (err instanceof AppError) {
-    socket.emit("playback:error", {
-      code: err.code,
-      message: err.message,
-      roomId,
-      commandId,
-    });
-    return;
-  }
-  logger.error("playback handler error", { err });
-  socket.emit("playback:error", {
-    code: "INTERNAL_ERROR",
-    message: "Unexpected playback error",
-    roomId,
-    commandId,
-  });
-}
-export function registerPlaybackHandlers(io: IoServer, socket: AppSocket) {
-  const user = socket.data.user
-  if (!user) return
-  // â”€â”€ Client asks for current state (reconnect / late join) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  socket.on("playback:sync", async (raw) => {
-    try {
-      const parsed = PlaybackSyncPayloadSchema.safeParse(raw)
-      if (!parsed.success) {
-        socket.emit("playback:error", {
-                  code: "BAD_REQUEST",
-                  message: parsed.error.issues.map((i) => i.message).join(", "),
-                });
-                return;
-      }
-      const { roomId } = parsed.data
-      // Must be a member
-      await roomService.assertMember(roomId, user.id);
-      const state = playbackService.getState(roomId)
-      if (!state) {
-              // No video has been selected yet â€“ still a valid reply
-              socket.emit("playback:snapshot", {
-                roomId,
-                state: {
-                  videoId: "",
-                  status: "PAUSED",
-                  position: 0,
-                  updatedAt: Date.now(),
-                  playbackRate: 1,
-                  sequence: 0,
-                },
-              });
-              return;
-      }
-
-      socket.emit("playback:snapshot", { roomId, state });
-    } catch (err) {
-      emitPlaybackError(socket,err,typeof raw === "object" && raw && "roomId" in raw
-                ? String((raw as { roomId?: string }).roomId)
-                : undefined)
-    }
-  })
-
-  // â”€â”€ Host / co-host issues a command â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  socket.on("playback:command", async (raw) => {
-    let commandId: string | undefined;
-    let roomId: string | undefined;
-    try {
-      const parsed = PlaybackCommandSchema.safeParse(raw)
-      if (!parsed.success) {
-              socket.emit("playback:error", {
-                code: "BAD_REQUEST",
-                message: parsed.error.issues.map((i) => i.message).join(", "),
-              });
-              return;
-      }
-      const cmd = parsed.data
-      commandId = cmd.commandId;
-      roomId = cmd.roomId;
-
-      // Membership + role
-            const membership = await roomService.assertMember(roomId, user.id);
-      
-            const result = playbackService.applyCommand(
-              roomId,
-              user.id,
-              membership.role,
-              cmd,
-            );
-            // Even on duplicate we still broadcast the current state so the
-                  // client that retried gets the latest sequence.
-      const channel = socketRoomName(roomId)
-      io.to(channel).emit("playback:state", {
-              roomId,
-              state: result.state,
-            });
-      
-            logger.info("playback:command accepted", {
-              roomId,
-              userId: user.id,
-              action: cmd.action,
-              sequence: result.state.sequence,
-              duplicate: result.duplicate,
-            });
-    }
-    catch (err) {
-      emitPlaybackError(socket, err, roomId, commandId);
-    }
-  })
-  }
-
-
-
-================================================
-FILE: apps/api/src/realtime/room-handlers.ts
-================================================
-import type { Server, Socket } from "socket.io";
-import {
-  RoomJoinPayloadSchema,
-  RoomLeavePayloadSchema,
-  type ClientToServerEvents,
-  type ServerToClientEvents,
-  type InterServerEvents,
-  type SocketData,
-  ChangeRolePayloadSchema,
-  RemoveMemberPayloadSchema,
-  TransferHostPayloadSchema,
-} from "@syncstream/contracts";
-import { AppError } from "@syncstream/shared-utils";
-import { roomService } from "../modules/room/room.container.js";
-import { socketRoomName } from "../modules/room/room.helper.js";
-import { roomPresence } from "./room-presence.js";
-import { logger } from "../config/logger.js";
-import { playbackService } from "../modules/playback/playback.container.js";
-import { hostLifecycle } from "./host-lifecycle.js";
-
-type IoServer = Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-type AppSocket = Socket<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-
-function emitRoomError(socket: AppSocket, err: unknown, roomId?: string) {
-  if (err instanceof AppError) {
-    socket.emit("room:error", {
-      code: err.code,
-      message: err.message,
-      roomId,
-    });
-    return;
-  }
-  logger.error( "room handler error",{ err });
-  socket.emit("room:error", {
-    code: "INTERNAL_ERROR",
-    message: "Unexpected room error",
-    roomId,
-  });
-}
-
-export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
-  const user = socket.data.user;
-  if (!user) return;
-
-  socket.on("room:join", async (raw) => {
-    try {
-      const parsed = RoomJoinPayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-        socket.emit("room:error", {
-          code: "BAD_REQUEST",
-          message: parsed.error.issues.map((i) => i.message).join(", "),
-        });
-        return;
-      }
-
-      const result = await roomService.join(user.id, {
-        roomId: parsed.data.roomId,
-        code: parsed.data.code,
-      });
-
-      const roomId = result.room.id;
-      const channel = socketRoomName(roomId);
-
-      socket.join(channel);
-      roomPresence.add(roomId, user.id, socket.id);
-      const room = result.room;
-      if (room.hostId === user.id) {
-        hostLifecycle.onHostCameOnline(roomId, user.id);
-      }
-
-      // Refresh members with presence
-      const members = await roomService.buildMemberList(roomId);
-
-      socket.emit("room:state", {
-        room: result.room,
-        members,
-      });
-
-      socket.emit("room:members", { roomId, members });
-      const playbackState = playbackService.getState(roomId);
-            if (playbackState) {
-              socket.emit("playback:snapshot", {
-                roomId,
-                state: playbackState,
-              });
-            }
-      if (result.created) {
-        const me = members.find((m) => m.userId === user.id);
-        if (me) {
-          socket.to(channel).emit("room:member-joined", {
-            roomId,
-            member: me,
-          });
-        }
-        socket.to(channel).emit("room:members", { roomId, members });
-      } else {
-        // Reconnect / second tab: broadcast updated online flags
-        socket.to(channel).emit("room:members", { roomId, members });
-      }
-
-      logger.info("room:join ok", {
-        roomId,
-        userId: user.id,
-        socketId: socket.id,
-        created: result.created,
-      });
-    } catch (err) {
-      emitRoomError(socket, err, typeof raw === "object" && raw && "roomId" in raw
-        ? String((raw as { roomId?: string }).roomId)
-        : undefined);
-    }
-  });
-
-  socket.on("room:leave", async (raw) => {
-    try {
-      const parsed = RoomLeavePayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-        socket.emit("room:error", {
-          code: "BAD_REQUEST",
-          message: "Invalid leave payload",
-        });
-        return;
-      }
-
-      const { roomId, leaveMembership } = parsed.data;
-      const channel = socketRoomName(roomId);
-
-      // Capture hostId before we mutate presence/membership
-      const roomMeta = await roomService.getRoomHostId(roomId); // see Fix 7
-      const wasHost = roomMeta === user.id;
-
-      socket.leave(channel);
-      const wentOffline = roomPresence.remove(roomId, user.id, socket.id);
-
-      if (leaveMembership) {
-        await roomService.leave(user.id, roomId);
-        io.to(channel).emit("room:member-left", { roomId, userId: user.id });
-        // Host leaving membership is already forbidden in service;
-        // if somehow host, cancel grace rather than transfer
-        if (wasHost) hostLifecycle.cancel(roomId);
-      } else if (wentOffline) {
-        // Still a member, but offline
-        const members = await roomService.buildMemberList(roomId);
-        io.to(channel).emit("room:members", { roomId, members });
-        if (wasHost) {
-          hostLifecycle.onHostWentOffline(io, roomId, user.id);
-        }
-
-        
-
-        logger.info("room:leave ok", {
-          roomId,
-          userId: user.id,
-          leaveMembership,
-          wentOffline,
-        });
-      }
-    } catch (err) {
-      emitRoomError(
-        socket,
-        err,
-        typeof raw === "object" && raw && "roomId" in raw
-          ? String((raw as { roomId?: string }).roomId)
-          : undefined,
-      );
-    }
-  });
-
-  socket.on("disconnect", () => {
-    const changes = roomPresence.removeSocket(socket.id, user.id);
-  
-    for (const { roomId, userWentOffline } of changes) {
-      if (!userWentOffline) continue;
-  
-      void (async () => {
-        try {
-          const members = await roomService.buildMemberList(roomId);
-          io.to(socketRoomName(roomId)).emit("room:members", {
-            roomId,
-            members,
-          });
-  
-          const hostId = await roomService.getRoomHostId(roomId);
-          if (hostId === user.id) {
-            hostLifecycle.onHostWentOffline(io, roomId, user.id);
-          }
-        } catch (err) {
-          logger.warn(
-            { err, roomId },
-            "failed to broadcast presence on disconnect",
-          );
-        }
-      })();
-    }
-  });
-  socket.on("room:transfer-host", async (raw) => {
-    let roomId: string | undefined;
-    try {
-      const parsed = TransferHostPayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-        socket.emit("room:error", {
-          code: "BAD_REQUEST",
-          message: parsed.error.issues.map((i) => i.message).join(", "),
-        });
-        return;
-      }
-      roomId = parsed.data.roomId;
-          const { toUserId } = parsed.data;
-      const result = await roomService.transferHost(user.id, roomId, toUserId);
-      const channel = socketRoomName(roomId);
-  
-      hostLifecycle.cancel(roomId); // voluntary transfer clears grace
-  
-      io.to(channel).emit("room:host-changed", {
-        roomId,
-        previousHostId: result.previousHostId,
-        newHostId: result.newHostId,
-        reason: "TRANSFER",
-      });
-      io.to(channel).emit("room:members", { roomId, members: result.members });
-    } catch (err) {
-      emitRoomError(socket, err, roomId);
-    }
-  });
-  
-  socket.on("room:remove-member", async (raw) => {
-    let roomId: string | undefined;
-    try {
-      const parsed = RemoveMemberPayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-            socket.emit("room:error", {
-              code: "BAD_REQUEST",
-              message: parsed.error.issues.map((i) => i.message).join(", "),
-            });
-            return;
-          }
-          roomId = parsed.data.roomId;
-              const targetId = parsed.data.userId;  
-      await roomService.removeMember(user.id, roomId, targetId);
-  
-      const channel = socketRoomName(roomId);
-      io.to(channel).emit("room:member-removed", {
-        roomId,
-        userId: targetId,
-        removedBy: user.id,
-      });
-      const members = await roomService.buildMemberList(roomId);
-      io.to(channel).emit("room:members", { roomId, members });
-  
-      // Force target sockets out of the channel (best-effort single process)
-      // Optional: track userId â†’ socketIds if you need hard kick
-    } catch (err) {
-      emitRoomError(socket, err);
-    }
-  });
-  
-  socket.on("room:change-role", async (raw) => {
-    let roomId: string | undefined;
-    try {
-      const parsed = ChangeRolePayloadSchema.safeParse(raw);
-      if (!parsed.success) {
-            socket.emit("room:error", {
-              code: "BAD_REQUEST",
-              message: parsed.error.issues.map((i) => i.message).join(", "),
-            });
-            return;
-          }
-          roomId = parsed.data.roomId;
-          const { userId: targetId, role } = parsed.data;
-  
-      const members = await roomService.changeRole(
-        user.id,
-        roomId,
-        targetId,
-        role,
-      );
-      const channel = socketRoomName(roomId);
-      io.to(channel).emit("room:member-role-changed", {
-        roomId,
-        userId: targetId,
-        role,
-      });
-      io.to(channel).emit("room:members", { roomId, members });
-    } catch (err) {
-      emitRoomError(socket, err);
-    }
-  });
-}
-
-
-================================================
-FILE: apps/api/src/realtime/room-presence.ts
-================================================
-/**
- * Single-process presence:
- * roomId â†’ userId â†’ Set<socketId>
- *
- * Online = at least one socket for that user in the room.
- */
-class RoomPresence {
-  private readonly rooms = new Map<string, Map<string, Set<string>>>();
-
-  /** socketId â†’ roomIds (for disconnect cleanup) */
-  private readonly socketRooms = new Map<string, Set<string>>();
-
-  add(roomId: string, userId: string, socketId: string): void {
-    let users = this.rooms.get(roomId);
-    if (!users) {
-      users = new Map();
-      this.rooms.set(roomId, users);
-    }
-    let sockets = users.get(userId);
-    if (!sockets) {
-      sockets = new Set();
-      users.set(userId, sockets);
-    }
-    sockets.add(socketId);
-
-    let sr = this.socketRooms.get(socketId);
-    if (!sr) {
-      sr = new Set();
-      this.socketRooms.set(socketId, sr);
-    }
-    sr.add(roomId);
-  }
-
-  /**
-   * Remove one socket from a room.
-   * @returns true if the user became offline in that room
-   */
-  remove(roomId: string, userId: string, socketId: string): boolean {
-    const users = this.rooms.get(roomId);
-    if (!users) return false;
-
-    const sockets = users.get(userId);
-    if (!sockets) return false;
-
-    sockets.delete(socketId);
-    if (sockets.size === 0) {
-      users.delete(userId);
-      if (users.size === 0) this.rooms.delete(roomId);
-      this.unlinkSocketRoom(socketId, roomId);
-      return true;
-    }
-    this.unlinkSocketRoom(socketId, roomId);
-    return false;
-  }
-
-  /** On disconnect: drop socket from all rooms. Returns rooms where user went offline. */
-  removeSocket(
-    socketId: string,
-    userId: string,
-  ): Array<{ roomId: string; userWentOffline: boolean }> {
-    const roomIds = this.socketRooms.get(socketId);
-    if (!roomIds || roomIds.size === 0) return [];
-
-    const result: Array<{ roomId: string; userWentOffline: boolean }> = [];
-    for (const roomId of [...roomIds]) {
-      const userWentOffline = this.remove(roomId, userId, socketId);
-      result.push({ roomId, userWentOffline });
-    }
-    this.socketRooms.delete(socketId);
-    return result;
-  }
-
-  isOnline(roomId: string, userId: string): boolean {
-    const sockets = this.rooms.get(roomId)?.get(userId);
-    return Boolean(sockets && sockets.size > 0);
-  }
-
-  getOnlineUserIds(roomId: string): Set<string> {
-    const users = this.rooms.get(roomId);
-    if (!users) return new Set();
-    return new Set(users.keys());
-  }
-
-  private unlinkSocketRoom(socketId: string, roomId: string) {
-    const sr = this.socketRooms.get(socketId);
-    if (!sr) return;
-    sr.delete(roomId);
-    if (sr.size === 0) this.socketRooms.delete(socketId);
-  }
-}
-
-export const roomPresence = new RoomPresence();
-
-
-================================================
-FILE: apps/api/src/realtime/socket-auth.ts
-================================================
-import { Server, Socket } from "socket.io";
-import { verifyAccessToken } from "../modules/auth/auth.helper.js";
-import { authService } from "../modules/auth/auth.container.js";
-import { SafeUser } from "../modules/auth/auth.types.js";
-import { logger } from "../config/logger.js";
-/**
- * Handshake auth: client must send
- *   io(url, { auth: { token: accessToken } })
- * Do NOT put the token in the query string.
- */
-export async function verifySocketIdentity(socket: Socket): Promise<SafeUser> {
-  const token =
-    (socket.handshake.auth as { token?: string } | undefined)?.token ??
-    extractBearer(socket.handshake.headers.authorization);
-  if (!token) {
-    throw new Error("Unauthorized");
-  }
-
-  const payload = verifyAccessToken(token);
-  return authService.resolveUser(payload.sub);
-}
-
-function extractBearer(header: string | string[] | undefined): string | null {
-  if (!header || Array.isArray(header)) return null;
-  if (!header.startsWith("Bearer ")) return null;
-  return header.slice(7).trim() || null;
-}
-
-export function registerSocketAuth(io: Server) {
-  io.use(async (socket, next) => {
-    try {
-      const user = await verifySocketIdentity(socket);
-      socket.data.user = user;
-      next();
-    } catch (err) {
-      logger.warn("Socket auth failed", {
-        socketId: socket.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-
-      next(new Error("Unauthorized"));
-    }
-  });
-}
-
-
-
-================================================
-FILE: apps/api/src/realtime/socket-server.ts
-================================================
-import type { Server as HttpServer } from "node:http";
-import { Server } from "socket.io";
-import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData,
-} from "@syncstream/contracts";
-import { ClientPingSchema } from "@syncstream/contracts";
-import { config } from "../config/index.js";
-import { logger } from "../config/logger.js";
-import { registerSocketAuth } from "./socket-auth.js";
-import { registerRoomHandlers } from "./room-handlers.js";
-import { registerPlaybackHandlers } from "./playback-handlers.js";
-import { registerChatHandlers } from "./chat-handlers.js";
-
-export function createSocketServer(httpServer: HttpServer) {
-  const io = new Server<
-    ClientToServerEvents,
-    ServerToClientEvents,
-    InterServerEvents,
-    SocketData
-  >(httpServer, {
-    path: config.SOCKET_PATH,
-    cors: {
-      origin: config.CLIENT_ORIGINS,
-      credentials: true,
-    },
-  });
-
-  registerSocketAuth(io);
-
-  io.on("connection", (socket) => {
-    const user = socket.data.user;
-    logger.info("Socket connected", {
-      socketId: socket.id,
-      userId: user?.id,
-    });
-
-    socket.emit("server:hello", {
-      message: `Connected as ${user?.email ?? "unknown"}`,
-      serverTime: Date.now(),
-      socketId: socket.id,
-    });
-
-    socket.on("client:ping", (raw) => {
-      const parsed = ClientPingSchema.safeParse(raw);
-      if (!parsed.success) {
-        logger.warn("Invalid client:ping", { socketId: socket.id });
-        return;
-      }
-      socket.emit("server:pong", {
-        serverTime: Date.now(),
-        clientTime: parsed.data.clientTime,
-      });
-    });
-
-    registerRoomHandlers(io, socket);
-    registerPlaybackHandlers(io, socket);  
-   registerChatHandlers(io, socket); 
-
-    socket.on("disconnect", (reason) => {
-      logger.info("Socket disconnected", {
-        socketId: socket.id,
-        userId: user?.id,
-        reason,
-      });
-    });
-  });
-
-  return io;
-}
 
 
 ================================================

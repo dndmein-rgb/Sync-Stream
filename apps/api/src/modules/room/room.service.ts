@@ -7,8 +7,8 @@ import { playbackService } from "../playback/playback.container.js";
 import { assertCan } from "./room.permissions.js";
 
 export type PresencePort = {
-  isOnline(roomId: string, userId: string): boolean;
-  getOnlineUserIds(roomId: string): Set<string>;
+  isOnline(roomId: string, userId: string): Promise<boolean>;
+    getOnlineUserIds(roomId: string): Promise<Set<string>>;
 };
 
 export class RoomService {
@@ -45,19 +45,26 @@ export class RoomService {
     };
   }
 
-  private toMemberViews(
+  private async toMemberViews(
     roomId: string,
     members: Awaited<ReturnType<RoomInterface["listMembers"]>>,
-  ): MemberView[] {
-    return members.map((m) => ({
-      userId: m.userId,
-      name: m.user.name,
-      avatarUrl: m.user.avatarUrl,
-      role: m.role,
-      online: this.presence.isOnline(roomId, m.userId),
-      joinedAt: m.joinedAt.toISOString(),
-    }));
+  ): Promise<MemberView[]> {
+    // We can still do this sequentially; for large rooms you could
+    // Promise.all the isOnline calls.
+    const views: MemberView[] = [];
+    for (const m of members) {
+      views.push({
+        userId: m.userId,
+        name: m.user.name,
+        avatarUrl: m.user.avatarUrl,
+        role: m.role,
+        online: await this.presence.isOnline(roomId, m.userId),
+        joinedAt: m.joinedAt.toISOString(),
+      });
+    }
+    return views;
   }
+  
 
   async create(hostId: string, body: CreateRoomBody) {
     const room = await this.repo.createRoomWithHost({
@@ -119,7 +126,7 @@ export class RoomService {
       }
       const { membership, created } = await this.repo.joinAsViewer(room.id, userId);
       const count = await this.repo.countMembers(room.id);
-      const members = this.toMemberViews(room.id, await this.repo.listMembers(room.id));
+      const members =await this.toMemberViews(room.id, await this.repo.listMembers(room.id));
       return {
         room: this.toRoomView(room, count, membership.role),
         members,
@@ -135,7 +142,7 @@ export class RoomService {
           // optional: still allow if already member even with wrong code
         }
         const count = await this.repo.countMembers(room.id);
-            const members = this.toMemberViews(room.id, await this.repo.listMembers(room.id));
+            const members = await this.toMemberViews(room.id, await this.repo.listMembers(room.id));
             return {
               room: this.toRoomView(room, count, existing.role),
               members,
@@ -193,7 +200,7 @@ export class RoomService {
       assertCan(membership.role, "DELETE_ROOM");
   
     await this.repo.deleteRoom(roomId);
-    playbackService.clearRoom(roomId);
+    await playbackService.clearRoom(roomId);
   }
   /** Used by socket layer after membership is confirmed. */
     async assertMember(roomId: string, userId: string) {
