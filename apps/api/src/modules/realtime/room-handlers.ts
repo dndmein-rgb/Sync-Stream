@@ -48,11 +48,20 @@ function emitRoomError(socket: AppSocket, err: unknown, roomId?: string) {
   });
 }
 
+/** Runs async handlers for one socket strictly in arrival order. */
+function createSerial() {
+  let chain: Promise<void> = Promise.resolve();
+  return (fn: (raw: unknown) => Promise<void>) => (raw: unknown) => {
+    chain = chain.then(() => fn(raw)).catch(() => undefined);
+  };
+}
+
 export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
   const user = socket.data.user;
   if (!user) return;
+    const serial = createSerial();
 
-  socket.on("room:join", async (raw) => {
+  socket.on("room:join",serial( async (raw) => {
     try {
       const parsed = RoomJoinPayloadSchema.safeParse(raw);
       if (!parsed.success) {
@@ -119,9 +128,9 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
         ? String((raw as { roomId?: string }).roomId)
         : undefined);
     }
-  });
+  }));
 
-  socket.on("room:leave", async (raw) => {
+  socket.on("room:leave", serial(async (raw) => {
     try {
       const parsed = RoomLeavePayloadSchema.safeParse(raw);
       if (!parsed.success) {
@@ -170,9 +179,9 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
         
       );
     }
-  });
+  }));
 
-  socket.on("disconnect", async() => {
+  socket.on("disconnect", serial(async() => {
     const changes = await roomPresence.removeSocket(socket.id, user.id);
   
     for (const { roomId, userWentOffline } of changes) {
@@ -198,7 +207,7 @@ export function registerRoomHandlers(io: IoServer, socket: AppSocket) {
         }
       })();
     }
-  });
+  }));
   socket.on("room:transfer-host", async (raw) => {
     let roomId: string | undefined;
     try {

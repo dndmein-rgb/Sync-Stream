@@ -3,77 +3,120 @@ Directory structure:
     ├── docker-compose.yml
     ├── package.json
     ├── tsconfig.base.json
-    ├── .env.example
     ├── apps/
-    │   └── api/
+    │   ├── api/
+    │   │   ├── package.json
+    │   │   ├── prisma.config.ts
+    │   │   ├── tsconfig.json
+    │   │   ├── prisma/
+    │   │   │   ├── schema.prisma
+    │   │   │   └── migrations/
+    │   │   │       ├── migration_lock.toml
+    │   │   │       └── 20261028095946_first/
+    │   │   │           └── migration.sql
+    │   │   └── src/
+    │   │       ├── app.ts
+    │   │       ├── server.ts
+    │   │       ├── config/
+    │   │       │   ├── index.ts
+    │   │       │   └── logger.ts
+    │   │       ├── infrastructure/
+    │   │       │   ├── metrics.ts
+    │   │       │   ├── prisma.ts
+    │   │       │   ├── ready.ts
+    │   │       │   └── redis.ts
+    │   │       ├── middlewares/
+    │   │       │   ├── auth.middleware.ts
+    │   │       │   ├── cors.middleware.ts
+    │   │       │   ├── error.middleware.ts
+    │   │       │   ├── rate-limit.middleware.ts
+    │   │       │   ├── req.middleware.ts
+    │   │       │   ├── request-id.middleware.ts
+    │   │       │   └── validate.middleware.ts
+    │   │       ├── modules/
+    │   │       │   ├── auth/
+    │   │       │   │   ├── auth.container.ts
+    │   │       │   │   ├── auth.controller.ts
+    │   │       │   │   ├── auth.helper.ts
+    │   │       │   │   ├── auth.interface.ts
+    │   │       │   │   ├── auth.repository.ts
+    │   │       │   │   ├── auth.route.ts
+    │   │       │   │   ├── auth.schema.ts
+    │   │       │   │   ├── auth.service.ts
+    │   │       │   │   └── auth.types.ts
+    │   │       │   ├── chat/
+    │   │       │   │   ├── chat.container.ts
+    │   │       │   │   ├── chat.interface.ts
+    │   │       │   │   ├── chat.repository.ts
+    │   │       │   │   ├── chat.service.ts
+    │   │       │   │   └── chat.types.ts
+    │   │       │   ├── playback/
+    │   │       │   │   ├── playback.container.ts
+    │   │       │   │   ├── playback.service.ts
+    │   │       │   │   └── playback.types.ts
+    │   │       │   ├── realtime/
+    │   │       │   │   ├── chat-handlers.ts
+    │   │       │   │   ├── host-lifecycle.ts
+    │   │       │   │   ├── playback-handlers.ts
+    │   │       │   │   ├── room-handlers.ts
+    │   │       │   │   ├── room-presence.ts
+    │   │       │   │   ├── socket-auth.ts
+    │   │       │   │   └── socket-server.ts
+    │   │       │   └── room/
+    │   │       │       ├── room.container.ts
+    │   │       │       ├── room.controller.ts
+    │   │       │       ├── room.helper.ts
+    │   │       │       ├── room.interface.ts
+    │   │       │       ├── room.permissions.ts
+    │   │       │       ├── room.repository.ts
+    │   │       │       ├── room.route.ts
+    │   │       │       ├── room.schema.ts
+    │   │       │       ├── room.service.ts
+    │   │       │       └── room.types.ts
+    │   │       └── types/
+    │   │           └── express.d.ts
+    │   └── web/
+    │       ├── next-env.d.ts
+    │       ├── next.config.ts
     │       ├── package.json
-    │       ├── prisma.config.ts
+    │       ├── postcss.config.mjs
+    │       ├── tailwind.config.ts
     │       ├── tsconfig.json
-    │       ├── .env.example
-    │       ├── prisma/
-    │       │   ├── schema.prisma
-    │       │   └── migrations/
-    │       │       ├── migration_lock.toml
-    │       │       └── 20261028095946_first/
-    │       │           └── migration.sql
     │       └── src/
-    │           ├── app.ts
-    │           ├── server.ts
-    │           ├── config/
-    │           │   ├── index.ts
-    │           │   └── logger.ts
-    │           ├── infrastructure/
-    │           │   ├── prisma.ts
-    │           │   ├── ready.ts
-    │           │   └── redis.ts
-    │           ├── middlewares/
-    │           │   ├── auth.middleware.ts
-    │           │   ├── cors.middleware.ts
-    │           │   ├── error.middleware.ts
-    │           │   ├── req.middleware.ts
-    │           │   └── validate.middleware.ts
-    │           ├── modules/
-    │           │   ├── auth/
-    │           │   │   ├── auth.container.ts
-    │           │   │   ├── auth.controller.ts
-    │           │   │   ├── auth.helper.ts
-    │           │   │   ├── auth.interface.ts
-    │           │   │   ├── auth.repository.ts
-    │           │   │   ├── auth.route.ts
-    │           │   │   ├── auth.schema.ts
-    │           │   │   ├── auth.service.ts
-    │           │   │   └── auth.types.ts
-    │           │   ├── chat/
-    │           │   │   ├── chat.container.ts
-    │           │   │   ├── chat.interface.ts
-    │           │   │   ├── chat.repository.ts
-    │           │   │   ├── chat.service.ts
-    │           │   │   └── chat.types.ts
-    │           │   ├── playback/
-    │           │   │   ├── playback.container.ts
-    │           │   │   ├── playback.service.ts
-    │           │   │   └── playback.types.ts
-    │           │   ├── realtime/
-    │           │   │   ├── chat-handlers.ts
-    │           │   │   ├── host-lifecycle.ts
-    │           │   │   ├── playback-handlers.ts
-    │           │   │   ├── room-handlers.ts
-    │           │   │   ├── room-presence.ts
-    │           │   │   ├── socket-auth.ts
-    │           │   │   └── socket-server.ts
+    │           ├── app/
+    │           │   ├── globals.css
+    │           │   ├── layout.tsx
+    │           │   ├── page.tsx
+    │           │   ├── login/
+    │           │   │   └── page.tsx
+    │           │   ├── register/
+    │           │   │   └── page.tsx
+    │           │   └── rooms/
+    │           │       ├── page.tsx
+    │           │       └── [id]/
+    │           │           ├── page.tsx
+    │           │           └── RoomClient.tsx
+    │           ├── components/
+    │           │   ├── ui.tsx
     │           │   └── room/
-    │           │       ├── room.container.ts
-    │           │       ├── room.controller.ts
-    │           │       ├── room.helper.ts
-    │           │       ├── room.interface.ts
-    │           │       ├── room.permissions.ts
-    │           │       ├── room.repository.ts
-    │           │       ├── room.route.ts
-    │           │       ├── room.schema.ts
-    │           │       ├── room.service.ts
-    │           │       └── room.types.ts
-    │           └── types/
-    │               └── express.d.ts
+    │           │       ├── ChatPanel.tsx
+    │           │       ├── MembersPanel.tsx
+    │           │       └── PlayerPanel.tsx
+    │           ├── context/
+    │           │   └── AuthContext.tsx
+    │           ├── hooks/
+    │           │   ├── useChat.ts
+    │           │   ├── usePlaybackSync.ts
+    │           │   ├── useRoomSession.ts
+    │           │   └── useSocketConnection.ts
+    │           └── lib/
+    │               ├── api.ts
+    │               ├── auth-storage.ts
+    │               ├── config.ts
+    │               ├── socket.ts
+    │               └── playback/
+    │                   ├── math.ts
+    │                   └── video-player.ts
     └── packages/
         ├── contracts/
         │   ├── package.json
@@ -285,29 +328,6 @@ FILE: tsconfig.base.json
 
 
 ================================================
-FILE: .env.example
-================================================
-NODE_ENV=development
-PORT=4000
-LOG_LEVEL=info
-
-# Database
-DATABASE_URL=postgresql://syncstream:syncstream@localhost:5433/syncstream?schema=public
-
-# CORS â€” comma-separated origins
-CLIENT_ORIGINS=http://localhost:3000
-
-# Socket.IO
-SOCKET_PATH=/socket.io
-
-JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
-JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
-BCRYPT_ROUNDS=12
-
-
-================================================
 FILE: apps/api/package.json
 ================================================
 {
@@ -385,24 +405,6 @@ FILE: apps/api/tsconfig.json
   },
   "include": ["src"]
 }
-
-
-================================================
-FILE: apps/api/.env.example
-================================================
-NODE_ENV=development
-PORT=4000
-LOG_LEVEL=info
-DATABASE_URL=postgresql://syncstream:syncstream@localhost:5433/syncstream?schema=public
-CLIENT_ORIGINS=http://localhost:3000
-SOCKET_PATH=/socket.io
-JWT_ACCESS_SECRET=change-me-access-min-32-chars-long!!
-JWT_REFRESH_SECRET=change-me-refresh-min-32-chars-long!
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
-BCRYPT_ROUNDS=12
-HOST_GRACE_MS=60000
-REDIS_URL=redis://localhost:6379
 
 
 ================================================
@@ -632,18 +634,26 @@ FILE: apps/api/src/app.ts
 ================================================
 import express from "express";
 import { getReadyStatus } from "./infrastructure/ready.js";
+import { metrics } from "./infrastructure/metrics.js";
 import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { requestLogger } from "./middlewares/req.middleware.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
+import { requestIdMiddleware } from "./middlewares/request-id.middleware.js";
+import {
+  authRateLimit,
+  defaultApiRateLimit,
+} from "./middlewares/rate-limit.middleware.js";
 import authRoutes from "./modules/auth/auth.route.js";
 import roomRoutes from "./modules/room/room.route.js";
 
 export function createApp() {
   const app = express();
 
+  app.use(requestIdMiddleware);
   app.use(corsMiddleware);
-  app.use(express.json());
+  app.use(express.json({ limit: "64kb" }));
   app.use(requestLogger);
+  app.use(defaultApiRateLimit);
 
   app.get("/health", (_req, res) => {
     res.status(200).json({
@@ -663,7 +673,15 @@ export function createApp() {
     });
   });
 
-  app.use("/auth", authRoutes);
+  app.get("/metrics", (_req, res) => {
+    res.status(200).json({
+      service: "syncstream-api",
+      timestamp: new Date().toISOString(),
+      metrics: metrics.snapshot(),
+    });
+  });
+
+  app.use("/auth", authRateLimit, authRoutes);
   app.use("/rooms", roomRoutes);
 
   app.use(errorMiddleware);
@@ -829,6 +847,104 @@ export const logger = {
 
 
 ================================================
+FILE: apps/api/src/infrastructure/metrics.ts
+================================================
+// apps/api/src/infrastructure/metrics.ts
+export type MetricSnapshot = {
+  uptimeSec: number;
+  process: {
+    pid: number;
+    nodeVersion: string;
+    memoryRssMb: number;
+    memoryHeapUsedMb: number;
+  };
+  sockets: { connected: number };
+  rooms: { activeTracked: number };
+  playback: {
+    commandsAccepted: number;
+    commandsRejected: number;
+    commandsDuplicate: number;
+  };
+  chat: {
+    messagesSent: number;
+    messagesRejected: number;
+  };
+  auth: {
+    httpUnauthorized: number;
+    socketUnauthorized: number;
+  };
+  errors: {
+    unhandled: number;
+    redis: number;
+    postgres: number;
+  };
+  rateLimits: { hits: number };
+};
+
+class MetricsRegistry {
+  private readonly startedAt = Date.now();
+
+  socketsConnected = 0;
+  roomsTracked = 0;
+  playbackCommandsAccepted = 0;
+  playbackCommandsRejected = 0;
+  playbackCommandsDuplicate = 0;
+  chatMessagesSent = 0;
+  chatMessagesRejected = 0;
+  httpUnauthorized = 0;
+  socketUnauthorized = 0;
+  unhandledErrors = 0;
+  redisErrors = 0;
+  postgresErrors = 0;
+  rateLimitHits = 0;
+
+  incSockets(delta: number) {
+    this.socketsConnected = Math.max(0, this.socketsConnected + delta);
+  }
+
+  setRoomsTracked(n: number) {
+    this.roomsTracked = Math.max(0, n);
+  }
+
+  snapshot(): MetricSnapshot {
+    const mem = process.memoryUsage();
+    return {
+      uptimeSec: Math.floor((Date.now() - this.startedAt) / 1000),
+      process: {
+        pid: process.pid,
+        nodeVersion: process.version,
+        memoryRssMb: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+        memoryHeapUsedMb: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+      },
+      sockets: { connected: this.socketsConnected },
+      rooms: { activeTracked: this.roomsTracked },
+      playback: {
+        commandsAccepted: this.playbackCommandsAccepted,
+        commandsRejected: this.playbackCommandsRejected,
+        commandsDuplicate: this.playbackCommandsDuplicate,
+      },
+      chat: {
+        messagesSent: this.chatMessagesSent,
+        messagesRejected: this.chatMessagesRejected,
+      },
+      auth: {
+        httpUnauthorized: this.httpUnauthorized,
+        socketUnauthorized: this.socketUnauthorized,
+      },
+      errors: {
+        unhandled: this.unhandledErrors,
+        redis: this.redisErrors,
+        postgres: this.postgresErrors,
+      },
+      rateLimits: { hits: this.rateLimitHits },
+    };
+  }
+}
+
+export const metrics = new MetricsRegistry();
+
+
+================================================
 FILE: apps/api/src/infrastructure/prisma.ts
 ================================================
 import pg from "pg";
@@ -938,6 +1054,7 @@ FILE: apps/api/src/infrastructure/redis.ts
 import {Redis} from "ioredis";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
+import { metrics } from "./metrics.js";
 
 /**
  * Primary Redis client used by the application
@@ -951,8 +1068,10 @@ export const redis = new Redis(config.REDIS_URL, {
 
 redis.on("connect", () => logger.info("Redis connected"));
 redis.on("ready", () => logger.info("Redis ready"));
-redis.on("error", (err) => logger.error({ err }, "Redis error"));
-redis.on("close", () => logger.warn("Redis connection closed"));
+redis.on("error", (err) => {
+  metrics.redisErrors += 1;
+  logger.error({ err }, "Redis error");
+});redis.on("close", () => logger.warn("Redis connection closed"));
 
 /**
  * Graceful shutdown helper.
@@ -1069,27 +1188,33 @@ FILE: apps/api/src/middlewares/error.middleware.ts
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "@syncstream/shared-utils";
 import { logger } from "../config/logger.js";
+import { metrics } from "../infrastructure/metrics.js";
 
 export function errorMiddleware(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ): void {
   if (err instanceof AppError) {
-    logger.warn({ err, code: err.code }, err.message);
+    if (err.statusCode === 401) metrics.httpUnauthorized += 1;
+    if (err.statusCode === 429) metrics.rateLimitHits += 1;
+    logger.warn(
+      { err, code: err.code, requestId: req.requestId, userId: req.user?.id },
+      err.message,
+    );
     res.status(err.statusCode).json({
       success: false,
-      error: {
-        code: err.code,
-        message: err.message,
-        details: err.details,
-      },
+      error: { code: err.code, message: err.message, details: err.details },
     });
     return;
   }
 
-  logger.error({ err }, "Unhandled error");
+  metrics.unhandledErrors += 1;
+  logger.error(
+    { err, requestId: req.requestId, userId: req.user?.id },
+    "Unhandled error",
+  );
   res.status(500).json({
     success: false,
     error: {
@@ -1104,8 +1229,74 @@ export function errorMiddleware(
 
 
 ================================================
+FILE: apps/api/src/middlewares/rate-limit.middleware.ts
+================================================
+// apps/api/src/middlewares/rate-limit.middleware.ts
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "@syncstream/shared-utils";
+import { metrics } from "../infrastructure/metrics.js";
+
+type Bucket = { timestamps: number[] };
+
+export function createRateLimit(options: {
+  windowMs: number;
+  max: number;
+  keyFn?: (req: Request) => string;
+  code?: string;
+  message?: string;
+}) {
+  const buckets = new Map<string, Bucket>();
+  const {
+    windowMs,
+    max,
+    keyFn = (req) => req.ip ?? "unknown",
+    code = "RATE_LIMITED",
+    message = "Too many requests; slow down",
+  } = options;
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, b] of buckets) {
+      b.timestamps = b.timestamps.filter((t) => now - t < windowMs);
+      if (b.timestamps.length === 0) buckets.delete(k);
+    }
+  }, Math.max(windowMs, 30_000)).unref?.();
+
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const key = keyFn(req);
+    const now = Date.now();
+    const bucket = buckets.get(key) ?? { timestamps: [] };
+    bucket.timestamps = bucket.timestamps.filter((t) => now - t < windowMs);
+
+    if (bucket.timestamps.length >= max) {
+      metrics.rateLimitHits += 1;
+      buckets.set(key, bucket);
+      next(new AppError(code, message, 429));
+      return;
+    }
+
+    bucket.timestamps.push(now);
+    buckets.set(key, bucket);
+    next();
+  };
+}
+
+export const defaultApiRateLimit = createRateLimit({
+  windowMs: 60_000,
+  max: 120,
+});
+
+export const authRateLimit = createRateLimit({
+  windowMs: 60_000,
+  max: 20,
+  message: "Too many auth attempts; try again later",
+});
+
+
+================================================
 FILE: apps/api/src/middlewares/req.middleware.ts
 ================================================
+// apps/api/src/middlewares/req.middleware.ts
 import type { RequestHandler } from "express";
 import { logger } from "../config/logger.js";
 
@@ -1115,12 +1306,51 @@ export const requestLogger: RequestHandler = (req, res, next) => {
   res.on("finish", () => {
     const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
     logger.info(
+      {
+        requestId: req.requestId,
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        durationMs: Number(durationMs.toFixed(2)),
+        userId: req.user?.id,
+      },
       `${req.method} ${req.originalUrl} ${res.statusCode} - ${durationMs.toFixed(2)} ms`,
     );
   });
 
   next();
 };
+
+
+================================================
+FILE: apps/api/src/middlewares/request-id.middleware.ts
+================================================
+// apps/api/src/middlewares/request-id.middleware.ts
+import type { NextFunction, Request, Response } from "express";
+import crypto from "node:crypto";
+
+declare global {
+  namespace Express {
+    interface Request {
+      requestId?: string;
+    }
+  }
+}
+
+export function requestIdMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const incoming = req.header("x-request-id");
+  const id =
+    incoming && incoming.length > 0 && incoming.length <= 128
+      ? incoming
+      : crypto.randomUUID();
+  req.requestId = id;
+  res.setHeader("X-Request-Id", id);
+  next();
+}
 
 
 ================================================
@@ -1952,6 +2182,7 @@ FILE: apps/api/src/modules/realtime/chat-handlers.ts
   import { roomService } from "../room/room.container.js";
   import { socketRoomName } from "../room/room.helper.js";
   import { logger } from "../../config/logger.js";
+import { metrics } from "../../infrastructure/metrics.js";
   
   type IoServer = Server<
     ClientToServerEvents,
@@ -1992,6 +2223,7 @@ FILE: apps/api/src/modules/realtime/chat-handlers.ts
     roomId?: string,
     clientMessageId?: string,
   ) {
+    metrics.chatMessagesRejected += 1;
     if (err instanceof AppError) {
       socket.emit("chat:error", {
         code: err.code,
@@ -2047,7 +2279,7 @@ FILE: apps/api/src/modules/realtime/chat-handlers.ts
         // Then broadcast to the Socket.IO room only
         const channel = socketRoomName(rid);
         io.to(channel).emit("chat:message", view);
-  
+        metrics.chatMessagesSent += 1;
         logger.info("chat:send ok", {
           roomId: rid,
           userId: user.id,
@@ -2839,6 +3071,7 @@ import { verifyAccessToken } from "../auth/auth.helper.js";
 import { authService } from "../auth/auth.container.js";
 import { SafeUser } from "../auth/auth.types.js";
 import { logger } from "../../config/logger.js";
+import { metrics } from "../../infrastructure/metrics.js";
 /**
  * Handshake auth: client must send
  *   io(url, { auth: { token: accessToken } })
@@ -2869,6 +3102,7 @@ export function registerSocketAuth(io: Server) {
       socket.data.user = user;
       next();
     } catch (err) {
+      metrics.socketUnauthorized += 1;
       logger.warn("Socket auth failed", {
         socketId: socket.id,
         error: err instanceof Error ? err.message : String(err),
@@ -2901,6 +3135,7 @@ import { registerPlaybackHandlers } from "./playback-handlers.js";
 import { registerChatHandlers } from "./chat-handlers.js";
 import { redis } from "../../infrastructure/redis.js";
 import { createAdapter } from "@socket.io/redis-adapter";
+import { metrics } from "../../infrastructure/metrics.js";
 
 export function createSocketServer(httpServer: HttpServer) {
   const pubClient = redis.duplicate();
@@ -2924,6 +3159,7 @@ export function createSocketServer(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const user = socket.data.user;
+    metrics.incSockets(1);
     logger.info("Socket connected", {
       socketId: socket.id,
       userId: user?.id,
@@ -2952,6 +3188,7 @@ export function createSocketServer(httpServer: HttpServer) {
    registerChatHandlers(io, socket); 
 
     socket.on("disconnect", (reason) => {
+      metrics.incSockets(-1);
       logger.info("Socket disconnected", {
         socketId: socket.id,
         userId: user?.id,
@@ -3895,6 +4132,2481 @@ declare global {
 }
 
 export {};
+
+
+================================================
+FILE: apps/web/next-env.d.ts
+================================================
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+/// <reference path="./.next/types/routes.d.ts" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+
+
+
+================================================
+FILE: apps/web/next.config.ts
+================================================
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  transpilePackages: ["@syncstream/contracts"],
+};
+
+export default nextConfig;
+
+
+================================================
+FILE: apps/web/package.json
+================================================
+{
+  "name": "@syncstream/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@syncstream/contracts": "*",
+    "next": "^15.3.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "socket.io-client": "^4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.2"
+  }
+}
+
+
+
+================================================
+FILE: apps/web/postcss.config.mjs
+================================================
+/** @type {import('postcss-load-config').Config} */
+const config = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+
+export default config;
+
+
+================================================
+FILE: apps/web/tailwind.config.ts
+================================================
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+  theme: {
+    extend: {
+      colors: {
+        ink: {
+          950: "#0b0f19",
+          900: "#111827",
+          800: "#1f2937",
+          700: "#374151",
+        },
+        accent: {
+          DEFAULT: "#6366f1",
+          soft: "#818cf8",
+          muted: "#4f46e5",
+        },
+      },
+      boxShadow: {
+        panel: "0 8px 30px rgba(0,0,0,0.35)",
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;
+
+
+================================================
+FILE: apps/web/tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "ES2022"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+
+
+================================================
+FILE: apps/web/src/app/globals.css
+================================================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-950 text-slate-100 antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.25), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(14, 165, 233, 0.12), transparent);
+  min-height: 100%;
+}
+
+input,
+button,
+textarea {
+  @apply outline-none;
+}
+
+.card {
+  @apply rounded-2xl border border-white/10 bg-ink-900/80 shadow-panel backdrop-blur;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition
+    disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply btn bg-accent text-white hover:bg-accent-muted;
+}
+
+.btn-ghost {
+  @apply btn border border-white/10 bg-white/5 hover:bg-white/10;
+}
+
+.btn-danger {
+  @apply btn bg-rose-600 text-white hover:bg-rose-500;
+}
+
+.input {
+  @apply w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm
+    placeholder:text-slate-500 focus:border-accent/60 focus:ring-2 focus:ring-accent/30;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}
+
+
+================================================
+FILE: apps/web/src/app/layout.tsx
+================================================
+import type { Metadata } from "next";
+import { AuthProvider } from "@/context/AuthContext";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "SyncStream",
+  description: "Watch together in real time",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <AuthProvider>
+          <div className="min-h-screen">{children}</div>
+        </AuthProvider>
+      </body>
+    </html>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/app/page.tsx
+================================================
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
+import { Button, Shell } from "@/components/ui";
+
+export default function HomePage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user) router.replace("/rooms");
+  }, [loading, user, router]);
+
+  return (
+    <Shell>
+      <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
+        <p className="mb-3 text-xs uppercase tracking-[0.25em] text-accent-soft">
+          Watch parties, synchronized
+        </p>
+        <h1 className="max-w-xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+          SyncStream
+        </h1>
+        <p className="mt-4 max-w-md text-slate-400">
+          Create a room, share a code, and watch the same video in lockstep â€”
+          with chat, presence, and host-controlled playback.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Link href="/login">
+            <Button>Sign in</Button>
+          </Link>
+          <Link href="/register">
+            <Button variant="ghost">Create account</Button>
+          </Link>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/app/login/page.tsx
+================================================
+"use client";
+
+import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { ApiError } from "@/lib/api";
+import { Alert, Button, Field, Header, Input, Shell } from "@/components/ui";
+
+export default function LoginPage() {
+  const { login } = useAuth();
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await login(email, password);
+      router.replace("/rooms");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Login failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Shell>
+      <Header title="Sign in" />
+      <div className="card mx-auto w-full max-w-md p-6">
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <Field label="Email">
+            <Input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+          <Field label="Password">
+            <Input
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          {error && <Alert>{error}</Alert>}
+          <Button type="submit" className="w-full" disabled={busy}>
+            {busy ? "Signing inâ€¦" : "Sign in"}
+          </Button>
+        </form>
+        <p className="mt-4 text-center text-sm text-slate-400">
+          No account?{" "}
+          <Link className="text-accent-soft hover:underline" href="/register">
+            Register
+          </Link>
+        </p>
+      </div>
+    </Shell>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/app/register/page.tsx
+================================================
+"use client";
+
+import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { ApiError } from "@/lib/api";
+import { Alert, Button, Field, Header, Input, Shell } from "@/components/ui";
+
+export default function RegisterPage() {
+  const { register } = useAuth();
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await register(name, email, password);
+      router.replace("/rooms");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Registration failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Shell>
+      <Header title="Create account" />
+      <div className="card mx-auto w-full max-w-md p-6">
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <Field label="Name">
+            <Input
+              required
+              maxLength={100}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          <Field label="Email">
+            <Input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+          <Field label="Password (min 8)">
+            <Input
+              type="password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          {error && <Alert>{error}</Alert>}
+          <Button type="submit" className="w-full" disabled={busy}>
+            {busy ? "Creatingâ€¦" : "Create account"}
+          </Button>
+        </form>
+        <p className="mt-4 text-center text-sm text-slate-400">
+          Already have an account?{" "}
+          <Link className="text-accent-soft hover:underline" href="/login">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </Shell>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/app/rooms/page.tsx
+================================================
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { ApiError, roomsApi } from "@/lib/api";
+import {
+  Alert,
+  Button,
+  Field,
+  Header,
+  Input,
+  Shell,
+} from "@/components/ui";
+
+export default function RoomsLobbyPage() {
+  const { user, loading, logout } = useAuth();
+  const router = useRouter();
+  const [name, setName] = useState("Movie night");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) router.replace("/login");
+  }, [loading, user, router]);
+
+  async function createRoom(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const room = await roomsApi.create({ name, visibility: "PRIVATE" });
+      router.push(`/rooms/${room.id}?code=${encodeURIComponent(room.code)}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create room");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function joinRoom(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await roomsApi.joinByCode(code.trim().toUpperCase());
+      const room = result.room;
+      router.push(
+        `/rooms/${room.id}?code=${encodeURIComponent(room.code)}`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not join room");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading || !user) {
+    return (
+      <Shell>
+        <p className="text-slate-400">Loadingâ€¦</p>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <Header
+        title="Rooms"
+        right={
+          <div className="flex items-center gap-3">
+            <span className="hidden text-sm text-slate-400 sm:inline">
+              {user.name}
+            </span>
+            <Button variant="ghost" onClick={() => void logout()}>
+              Log out
+            </Button>
+          </div>
+        }
+      />
+
+      {error && (
+        <div className="mb-4">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <form className="card space-y-4 p-6" onSubmit={createRoom}>
+          <h2 className="text-lg font-medium text-white">Create a room</h2>
+          <p className="text-sm text-slate-400">
+            You become the host. Share the room code so friends can join.
+          </p>
+          <Field label="Room name">
+            <Input
+              required
+              maxLength={100}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          <Button type="submit" disabled={busy} className="w-full">
+            Create private room
+          </Button>
+        </form>
+
+        <form className="card space-y-4 p-6" onSubmit={joinRoom}>
+          <h2 className="text-lg font-medium text-white">Join with code</h2>
+          <p className="text-sm text-slate-400">
+            Enter the invite code from the host.
+          </p>
+          <Field label="Room code">
+            <Input
+              required
+              minLength={4}
+              maxLength={32}
+              placeholder="e.g. ABCD2345"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+            />
+          </Field>
+          <Button type="submit" variant="ghost" disabled={busy} className="w-full">
+            Join room
+          </Button>
+        </form>
+      </div>
+    </Shell>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/app/rooms/[id]/page.tsx
+================================================
+import { Suspense } from "react";
+import { RoomClient } from "./RoomClient";
+
+export default async function RoomPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-400">Loading roomâ€¦</div>}>
+      <RoomClient roomId={id} />
+    </Suspense>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/app/rooms/[id]/RoomClient.tsx
+================================================
+"use client";
+
+import { useEffect, useMemo, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
+import { useRoomSession } from "@/hooks/useRoomSession";
+import { usePlaybackSync } from "@/hooks/usePlaybackSync";
+import { useChat } from "@/hooks/useChat";
+import { PlayerPanel } from "@/components/room/PlayerPanel";
+import { ChatPanel } from "@/components/room/ChatPanel";
+import { MembersPanel } from "@/components/room/MembersPanel";
+import {
+  Alert,
+  Button,
+  Header,
+  Shell,
+  StatusDot,
+} from "@/components/ui";
+
+export function RoomClient({ roomId }: { roomId: string }) {
+  const search = useSearchParams();
+  const code = search.get("code") ?? undefined;
+  const router = useRouter();
+  const { user, loading } = useAuth();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const enabled = Boolean(user && roomId);
+  const { socket, status } = useSocketConnection(enabled);
+
+  const session = useRoomSession({ socket, roomId, code });
+
+  const playback = usePlaybackSync({
+    socket,
+    roomId,
+    role: session.myRole,
+    videoRef,
+  });
+
+  const chat = useChat({
+    socket,
+    roomId,
+    enabled: session.joined,
+  });
+
+  useEffect(() => {
+    if (!loading && !user) router.replace("/login");
+  }, [loading, user, router]);
+
+  useEffect(() => {
+    if (session.kicked) router.replace("/rooms");
+  }, [session.kicked, router]);
+
+  const inviteHint = useMemo(() => session.room?.code ?? null, [session.room]);
+
+  if (loading || !user) {
+    return (
+      <Shell>
+        <p className="text-slate-400">Loadingâ€¦</p>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <Header
+        title={session.room?.name ?? "Room"}
+        right={
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusDot
+              status={
+                status === "connected"
+                  ? "connected"
+                  : status === "connecting"
+                    ? "connecting"
+                    : status === "error"
+                      ? "error"
+                      : "disconnected"
+              }
+            />
+            <Button
+              variant="ghost"
+              onClick={() => {
+                session.leavePermanently();
+                router.push("/rooms");
+              }}
+            >
+              Leave
+            </Button>
+          </div>
+        }
+      />
+
+      {inviteHint && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+          <span>
+            Invite code:{" "}
+            <code className="rounded-lg bg-white/10 px-2 py-1 font-mono text-accent-soft">
+              {inviteHint}
+            </code>
+          </span>
+          <Button
+            variant="ghost"
+            className="text-xs"
+            onClick={() => void navigator.clipboard.writeText(inviteHint)}
+          >
+            Copy code
+          </Button>
+          {session.myRole && (
+            <span className="badge bg-white/10">You: {session.myRole}</span>
+          )}
+        </div>
+      )}
+
+      {session.error && (
+        <div className="mb-4">
+          <Alert>{session.error}</Alert>
+        </div>
+      )}
+
+      {!session.joined && !session.error && (
+        <p className="mb-4 text-sm text-slate-400">Joining roomâ€¦</p>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
+          <PlayerPanel
+            videoRef={videoRef}
+            state={playback.state}
+            canControl={playback.canControl}
+            role={session.myRole}
+            needsGesture={playback.needsGesture}
+            loadError={playback.loadError}
+            error={playback.error}
+            onCommand={playback.sendCommand}
+            onResumeGesture={() => void playback.resumeFromGesture()}
+          />
+          <MembersPanel
+            members={session.members}
+            myRole={session.myRole}
+            myUserId={user.id}
+            hostId={session.room?.hostId}
+            onTransfer={session.transferHost}
+            onRemove={session.removeMember}
+            onChangeRole={session.changeRole}
+          />
+        </div>
+        <ChatPanel
+          messages={chat.messages}
+          typing={chat.typing}
+          reactions={chat.reactions}
+          error={chat.error}
+          onSend={chat.send}
+          onTyping={chat.setIsTyping}
+          onReact={chat.react}
+        />
+      </div>
+    </Shell>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/components/ui.tsx
+================================================
+"use client";
+
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+
+export function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-6">
+      {children}
+    </div>
+  );
+}
+
+export function Header({
+  title,
+  right,
+}: {
+  title: string;
+  right?: ReactNode;
+}) {
+  return (
+    <header className="mb-6 flex items-center justify-between gap-4">
+      <div>
+        <p className="text-xs uppercase tracking-[0.2em] text-accent-soft">
+          SyncStream
+        </p>
+        <h1 className="text-2xl font-semibold text-white">{title}</h1>
+      </div>
+      {right}
+    </header>
+  );
+}
+
+export function Button(
+  props: ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: "primary" | "ghost" | "danger";
+  },
+) {
+  const { variant = "primary", className = "", ...rest } = props;
+  const v =
+    variant === "ghost"
+      ? "btn-ghost"
+      : variant === "danger"
+        ? "btn-danger"
+        : "btn-primary";
+  return <button className={`${v} ${className}`} {...rest} />;
+}
+
+export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+  const { className = "", ...rest } = props;
+  return <input className={`input ${className}`} {...rest} />;
+}
+
+export function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-xs font-medium text-slate-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+export function Alert({
+  tone = "error",
+  children,
+}: {
+  tone?: "error" | "info" | "ok";
+  children: ReactNode;
+}) {
+  const colors =
+    tone === "ok"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+      : tone === "info"
+        ? "border-sky-500/30 bg-sky-500/10 text-sky-200"
+        : "border-rose-500/30 bg-rose-500/10 text-rose-200";
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-sm ${colors}`}>
+      {children}
+    </div>
+  );
+}
+
+export function StatusDot({
+  status,
+}: {
+  status: "connected" | "connecting" | "disconnected" | "error" | "idle";
+}) {
+  const color =
+    status === "connected"
+      ? "bg-emerald-400"
+      : status === "connecting"
+        ? "bg-amber-400 animate-pulse"
+        : status === "error"
+          ? "bg-rose-400"
+          : "bg-slate-500";
+  return (
+    <span className="inline-flex items-center gap-2 text-xs text-slate-400">
+      <span className={`h-2 w-2 rounded-full ${color}`} />
+      {status}
+    </span>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/components/room/ChatPanel.tsx
+================================================
+"use client";
+
+import { FormEvent, useEffect, useRef, useState } from "react";
+import type { ChatMessageView } from "@syncstream/contracts";
+import { Button, Input } from "@/components/ui";
+
+type Props = {
+  messages: ChatMessageView[];
+  typing: Array<{ userId: string; name: string }>;
+  reactions: Array<{ id: string; name: string; emoji: string }>;
+  error: string | null;
+  onSend: (content: string) => void;
+  onTyping: (isTyping: boolean) => void;
+  onReact: (emoji: string) => void;
+};
+
+const EMOJIS = ["🔥", "😂", "👏", "❤️", "😮"];
+
+export function ChatPanel({
+  messages,
+  typing,
+  reactions,
+  error,
+  onSend,
+  onTyping,
+  onReact,
+}: Props) {
+  const [text, setText] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    onSend(text);
+    setText("");
+    onTyping(false);
+  }
+
+  function onChange(value: string) {
+    setText(value);
+    onTyping(true);
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => onTyping(false), 1200);
+  }
+
+  return (
+    <div className="card flex h-full min-h-[320px] flex-col">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <h3 className="text-sm font-medium text-white">Chat</h3>
+        <div className="flex gap-1">
+          {EMOJIS.map((e) => (
+            <button
+              key={e}
+              type="button"
+              className="rounded-lg px-1.5 py-0.5 text-sm hover:bg-white/10"
+              onClick={() => onReact(e)}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="relative flex-1 space-y-2 overflow-y-auto px-4 py-3">
+        {messages.length === 0 && (
+          <p className="text-sm text-slate-500">No messages yet.</p>
+        )}
+        {messages.map((m) => (
+          <div key={m.id} className="text-sm">
+            <span className="font-medium text-accent-soft">{m.name}</span>
+            <span className="text-slate-500"> · </span>
+            <span className="text-slate-200">{m.content}</span>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+
+        {reactions.length > 0 && (
+          <div className="pointer-events-none absolute inset-x-4 bottom-2 flex flex-wrap gap-2">
+            {reactions.map((r) => (
+              <span
+                key={r.id}
+                className="animate-bounce rounded-full bg-black/50 px-2 py-1 text-lg"
+                title={r.name}
+              >
+                {r.emoji}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {typing.length > 0 && (
+        <p className="px-4 text-xs text-slate-500">
+          {typing.map((t) => t.name).join(", ")} typing…
+        </p>
+      )}
+      {error && <p className="px-4 text-xs text-rose-300">{error}</p>}
+
+      <form className="flex gap-2 border-t border-white/10 p-3" onSubmit={submit}>
+        <Input
+          placeholder="Say something…"
+          value={text}
+          maxLength={2000}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <Button type="submit">Send</Button>
+      </form>
+    </div>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/components/room/MembersPanel.tsx
+================================================
+"use client";
+
+import type { RoomMemberView, RoomRole } from "@syncstream/contracts";
+import { Button } from "@/components/ui";
+
+type Props = {
+  members: RoomMemberView[];
+  myRole: RoomRole | null;
+  myUserId: string | undefined;
+  hostId: string | undefined;
+  onTransfer: (userId: string) => void;
+  onRemove: (userId: string) => void;
+  onChangeRole: (userId: string, role: "CO_HOST" | "VIEWER") => void;
+};
+
+function roleBadge(role: RoomRole) {
+  const color =
+    role === "HOST"
+      ? "bg-amber-500/20 text-amber-200"
+      : role === "CO_HOST"
+        ? "bg-sky-500/20 text-sky-200"
+        : "bg-white/10 text-slate-300";
+  return <span className={`badge ${color}`}>{role}</span>;
+}
+
+export function MembersPanel({
+  members,
+  myRole,
+  myUserId,
+  hostId,
+  onTransfer,
+  onRemove,
+  onChangeRole,
+}: Props) {
+  const isHost = myRole === "HOST";
+
+  return (
+    <div className="card p-4">
+      <h3 className="mb-3 text-sm font-medium text-white">
+        Members ({members.length})
+      </h3>
+      <ul className="space-y-2">
+        {members.map((m) => (
+          <li
+            key={m.userId}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/20 px-3 py-2"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${m.online ? "bg-emerald-400" : "bg-slate-600"}`}
+                />
+                <span className="truncate text-sm text-white">
+                  {m.name}
+                  {m.userId === myUserId ? " (you)" : ""}
+                </span>
+              </div>
+              <div className="mt-1">{roleBadge(m.role)}</div>
+            </div>
+            {isHost && m.userId !== myUserId && (
+              <div className="flex flex-wrap gap-1">
+                {m.userId !== hostId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs"
+                    onClick={() => onTransfer(m.userId)}
+                  >
+                    Make host
+                  </Button>
+                )}
+                {m.role !== "CO_HOST" ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs"
+                    onClick={() => onChangeRole(m.userId, "CO_HOST")}
+                  >
+                    Co-host
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs"
+                    onClick={() => onChangeRole(m.userId, "VIEWER")}
+                  >
+                    Demote
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="danger"
+                  className="px-2 py-1 text-xs"
+                  onClick={() => onRemove(m.userId)}
+                >
+                  Remove
+                </Button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/components/room/PlayerPanel.tsx
+================================================
+"use client";
+
+import { FormEvent, useRef, useState } from "react";
+import type { PlaybackState, RoomRole } from "@syncstream/contracts";
+import { Button, Input } from "@/components/ui";
+
+const SAMPLE_VIDEOS = [
+  {
+    label: "Big Buck Bunny (MP4)",
+    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+  },
+  {
+    label: "Elephant Dream (MP4)",
+    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+  },
+  {
+    label: "Sintel (MP4)",
+    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+  },
+];
+
+type Props = {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  state: PlaybackState;
+  canControl: boolean;
+  role: RoomRole | null;
+  needsGesture: boolean;
+  loadError: string | null;
+  error: string | null;
+  onCommand: (cmd: {
+    action: "PLAY" | "PAUSE" | "SEEK" | "CHANGE_VIDEO";
+    position?: number;
+    videoId?: string;
+  }) => void;
+  onResumeGesture: () => void;
+};
+
+function formatTime(sec: number) {
+  if (!Number.isFinite(sec)) return "0:00";
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
+export function PlayerPanel({
+  videoRef,
+  state,
+  canControl,
+  needsGesture,
+  loadError,
+  error,
+  onCommand,
+  onResumeGesture,
+}: Props) {
+  const [customUrl, setCustomUrl] = useState("");
+  const seekRef = useRef<HTMLInputElement>(null);
+
+  function submitUrl(e: FormEvent) {
+    e.preventDefault();
+    const url = customUrl.trim();
+    if (!url || !canControl) return;
+    onCommand({ action: "CHANGE_VIDEO", videoId: url });
+  }
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="relative aspect-video bg-black">
+        <video
+          ref={videoRef}
+          className="h-full w-full"
+          playsInline
+          preload="auto"
+          controls={false}
+        />
+        {needsGesture && (
+          <button
+            type="button"
+            className="absolute inset-0 flex items-center justify-center bg-black/50 text-sm font-medium text-white"
+            onClick={onResumeGesture}
+          >
+            Tap to start playback
+          </button>
+        )}
+        {!state.videoId && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-slate-400">
+            {canControl
+              ? "Select a video to begin"
+              : "Waiting for host to pick a video"}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3 border-t border-white/10 p-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span className="badge bg-white/10 text-slate-200">{state.status}</span>
+          <span>seq {state.sequence}</span>
+          <span>pos {formatTime(state.position)}</span>
+        </div>
+
+        {(error || loadError) && (
+          <p className="text-sm text-rose-300">{error || loadError}</p>
+        )}
+
+        {canControl && (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() =>
+                  onCommand({
+                    action: "PLAY",
+                    position: videoRef.current?.currentTime,
+                  })
+                }
+              >
+                Play
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onCommand({ action: "PAUSE" })}
+              >
+                Pause
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  const el = videoRef.current;
+                  if (!el) return;
+                  onCommand({
+                    action: "SEEK",
+                    position: Math.max(0, el.currentTime - 10),
+                  });
+                }}
+              >
+                âˆ’10s
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  const el = videoRef.current;
+                  if (!el) return;
+                  onCommand({
+                    action: "SEEK",
+                    position: el.currentTime + 10,
+                  });
+                }}
+              >
+                +10s
+              </Button>
+            </div>
+
+            <input
+              ref={seekRef}
+              type="range"
+              min={0}
+              max={Math.max(videoRef.current?.duration || 100, 1)}
+              step={0.1}
+              className="w-full"
+              onMouseUp={() => {
+                const v = Number(seekRef.current?.value ?? 0);
+                onCommand({ action: "SEEK", position: v });
+              }}
+              onTouchEnd={() => {
+                const v = Number(seekRef.current?.value ?? 0);
+                onCommand({ action: "SEEK", position: v });
+              }}
+            />
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-400">Sample videos</p>
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_VIDEOS.map((v) => (
+                  <Button
+                    key={v.url}
+                    type="button"
+                    variant="ghost"
+                    className="text-xs"
+                    onClick={() =>
+                      onCommand({ action: "CHANGE_VIDEO", videoId: v.url })
+                    }
+                  >
+                    {v.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <form className="flex gap-2" onSubmit={submitUrl}>
+              <Input
+                placeholder="Or paste a direct MP4 URL"
+                value={customUrl}
+                onChange={(e) => setCustomUrl(e.target.value)}
+              />
+              <Button type="submit" variant="ghost">
+                Load
+              </Button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+================================================
+FILE: apps/web/src/context/AuthContext.tsx
+================================================
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { authApi } from "@/lib/api";
+import {
+  clearSession,
+  getStoredUser,
+  setSession,
+  type StoredUser,
+} from "@/lib/auth-storage";
+import { disconnectSocket } from "@/lib/socket";
+
+type AuthState = {
+  user: StoredUser | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshMe: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<StoredUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const cached = getStoredUser();
+    if (cached) setUser(cached);
+    authApi
+      .me()
+      .then((u) => setUser(u))
+      .catch(() => {
+        clearSession();
+        setUser(null);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const result = await authApi.login({ email, password });
+    setSession({
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
+      user: result.user,
+    });
+    setUser(result.user);
+  }, []);
+
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      const result = await authApi.register({ name, email, password });
+      setSession({
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+        user: result.user,
+      });
+      setUser(result.user);
+    },
+    [],
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      disconnectSocket();
+      clearSession();
+      setUser(null);
+    }
+  }, []);
+
+  const refreshMe = useCallback(async () => {
+    const u = await authApi.me();
+    setUser(u);
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, loading, login, register, logout, refreshMe }),
+    [user, loading, login, register, logout, refreshMe],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}
+
+
+================================================
+FILE: apps/web/src/hooks/useChat.ts
+================================================
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import type { ChatMessageView } from "@syncstream/contracts";
+import type { AppSocket } from "@/lib/socket";
+
+export function useChat(opts: {
+  socket: AppSocket | null;
+  roomId: string | null;
+  enabled: boolean;
+}) {
+  const { socket, roomId, enabled } = opts;
+  const [messages, setMessages] = useState<ChatMessageView[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [typing, setTyping] = useState<
+    Array<{ userId: string; name: string }>
+  >([]);
+  const [reactions, setReactions] = useState<
+    Array<{
+      id: string;
+      userId: string;
+      name: string;
+      emoji: string;
+      at: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    if (!socket || !roomId || !enabled) return;
+
+    socket.emit("chat:history", { roomId, limit: 50 });
+
+    const onMessage = (msg: ChatMessageView) => {
+      if (msg.roomId !== roomId) return;
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+    };
+    const onHistory = (payload: {
+      roomId: string;
+      messages: ChatMessageView[];
+      nextCursor: string | null;
+    }) => {
+      if (payload.roomId !== roomId) return;
+      setMessages([...payload.messages].reverse());
+    };
+    const onError = (payload: {
+      code: string;
+      message: string;
+      roomId?: string;
+    }) => {
+      if (payload.roomId && payload.roomId !== roomId) return;
+      setError(payload.message);
+    };
+    const onTyping = (payload: {
+      roomId: string;
+      userId: string;
+      name: string;
+      isTyping: boolean;
+    }) => {
+      if (payload.roomId !== roomId) return;
+      setTyping((prev) => {
+        const without = prev.filter((t) => t.userId !== payload.userId);
+        return payload.isTyping
+          ? [...without, { userId: payload.userId, name: payload.name }]
+          : without;
+      });
+    };
+    const onReaction = (payload: {
+      roomId: string;
+      userId: string;
+      name: string;
+      emoji: string;
+      at: number;
+    }) => {
+      if (payload.roomId !== roomId) return;
+      const id = `${payload.userId}-${payload.at}`;
+      setReactions((prev) => [
+        ...prev.slice(-20),
+        {
+          id,
+          userId: payload.userId,
+          name: payload.name,
+          emoji: payload.emoji,
+          at: payload.at,
+        },
+      ]);
+      setTimeout(() => {
+        setReactions((prev) => prev.filter((r) => r.id !== id));
+      }, 2500);
+    };
+
+    socket.on("chat:message", onMessage);
+    socket.on("chat:history", onHistory);
+    socket.on("chat:error", onError);
+    socket.on("typing:update", onTyping);
+    socket.on("reaction:new", onReaction);
+
+    return () => {
+      socket.off("chat:message", onMessage);
+      socket.off("chat:history", onHistory);
+      socket.off("chat:error", onError);
+      socket.off("typing:update", onTyping);
+      socket.off("reaction:new", onReaction);
+    };
+  }, [socket, roomId, enabled]);
+
+  const send = useCallback(
+    (content: string) => {
+      if (!socket || !roomId || !content.trim()) return;
+      setError(null);
+      socket.emit("chat:send", {
+        roomId,
+        content: content.trim(),
+        clientMessageId: crypto.randomUUID(),
+      });
+    },
+    [socket, roomId],
+  );
+
+  const setIsTyping = useCallback(
+    (isTyping: boolean) => {
+      if (!socket || !roomId) return;
+      socket.emit("typing:update", { roomId, isTyping });
+    },
+    [socket, roomId],
+  );
+
+  const react = useCallback(
+    (emoji: string) => {
+      if (!socket || !roomId) return;
+      socket.emit("reaction:send", { roomId, emoji });
+    },
+    [socket, roomId],
+  );
+
+  return { messages, error, typing, reactions, send, setIsTyping, react };
+}
+
+
+================================================
+FILE: apps/web/src/hooks/usePlaybackSync.ts
+================================================
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { PlaybackState, RoomRole } from "@syncstream/contracts";
+import type { AppSocket } from "@/lib/socket";
+import { decideDriftCorrection, expectedPosition } from "@/lib/playback/math";
+import {
+  HtmlVideoPlayer,
+  type VideoPlayer,
+} from "@/lib/playback/video-player";
+
+const SAMPLE_MS = 400;
+const RATE_RESET_MS = 2_000;
+
+function emptyState(): PlaybackState {
+  return {
+    videoId: "",
+    status: "PAUSED",
+    position: 0,
+    updatedAt: Date.now(),
+    playbackRate: 1,
+    sequence: 0,
+  };
+}
+
+export function usePlaybackSync(opts: {
+  socket: AppSocket | null;
+  roomId: string | null;
+  role: RoomRole | null;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+}) {
+  const { socket, roomId, role, videoRef } = opts;
+  const [state, setState] = useState<PlaybackState>(emptyState());
+  const [needsGesture, setNeedsGesture] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const appliedSeq = useRef(0);
+  const playerRef = useRef<VideoPlayer | null>(null);
+  const bufferingRef = useRef(false);
+  const rateResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyingRef = useRef(false);
+
+  const canControl = role === "HOST" || role === "CO_HOST";
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    playerRef.current = new HtmlVideoPlayer(el);
+
+    const onWaiting = () => {
+      bufferingRef.current = true;
+    };
+    const onPlaying = () => {
+      bufferingRef.current = false;
+      setNeedsGesture(false);
+    };
+    const onError = () => setLoadError("Failed to load video");
+
+    el.addEventListener("waiting", onWaiting);
+    el.addEventListener("playing", onPlaying);
+    el.addEventListener("error", onError);
+    return () => {
+      el.removeEventListener("waiting", onWaiting);
+      el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("error", onError);
+    };
+  }, [videoRef]);
+
+  const applyState = useCallback(async (next: PlaybackState) => {
+    if (next.sequence < appliedSeq.current) return;
+    appliedSeq.current = next.sequence;
+    setState(next);
+
+    const player = playerRef.current;
+    if (!player) return;
+
+    applyingRef.current = true;
+    try {
+      if (next.videoId && player.getSrc() !== next.videoId) {
+        setLoadError(null);
+        player.setSrc(next.videoId);
+      }
+
+      const now = Date.now();
+      const target = expectedPosition(next, now);
+      player.setPlaybackRate(next.playbackRate || 1);
+
+      const local = player.getCurrentTime();
+      if (Math.abs(local - target) > 0.35) {
+        player.seek(target);
+      }
+
+      if (next.status === "PLAYING") {
+        try {
+          await player.play();
+          setNeedsGesture(false);
+        } catch {
+          setNeedsGesture(true);
+        }
+      } else {
+        player.pause();
+      }
+    } finally {
+      setTimeout(() => {
+        applyingRef.current = false;
+      }, 250);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!socket || !roomId) return;
+
+    const onState = (payload: { roomId: string; state: PlaybackState }) => {
+      if (payload.roomId !== roomId) return;
+      void applyState(payload.state);
+    };
+    const onSnapshot = (payload: { roomId: string; state: PlaybackState }) => {
+      if (payload.roomId !== roomId) return;
+      void applyState(payload.state);
+    };
+    const onError = (payload: {
+      code: string;
+      message: string;
+      roomId?: string;
+    }) => {
+      if (payload.roomId && payload.roomId !== roomId) return;
+      setError(payload.message);
+    };
+
+    socket.on("playback:state", onState);
+    socket.on("playback:snapshot", onSnapshot);
+    socket.on("playback:error", onError);
+    socket.emit("playback:sync", { roomId });
+
+    return () => {
+      socket.off("playback:state", onState);
+      socket.off("playback:snapshot", onSnapshot);
+      socket.off("playback:error", onError);
+    };
+  }, [socket, roomId, applyState]);
+
+  useEffect(() => {
+    if (!roomId) return;
+    const id = setInterval(() => {
+      const player = playerRef.current;
+      if (!player || !state.videoId) return;
+      if (applyingRef.current || bufferingRef.current || needsGesture) return;
+      if (state.status !== "PLAYING") {
+        player.setPlaybackRate(state.playbackRate || 1);
+        return;
+      }
+
+      const expected = expectedPosition(state, Date.now());
+      const local = player.getCurrentTime();
+      const action = decideDriftCorrection(
+        local,
+        expected,
+        state.playbackRate || 1,
+      );
+
+      if (action.kind === "rate") {
+        player.setPlaybackRate(action.rate);
+        if (rateResetTimer.current) clearTimeout(rateResetTimer.current);
+        rateResetTimer.current = setTimeout(() => {
+          player.setPlaybackRate(state.playbackRate || 1);
+        }, RATE_RESET_MS);
+      } else if (action.kind === "seek") {
+        player.seek(action.position);
+        player.setPlaybackRate(state.playbackRate || 1);
+      }
+    }, SAMPLE_MS);
+
+    return () => {
+      clearInterval(id);
+      if (rateResetTimer.current) clearTimeout(rateResetTimer.current);
+    };
+  }, [roomId, state, needsGesture]);
+
+  const sendCommand = useCallback(
+    (cmd: {
+      action: "PLAY" | "PAUSE" | "SEEK" | "CHANGE_VIDEO";
+      position?: number;
+      videoId?: string;
+    }) => {
+      if (!socket || !roomId || !canControl) return;
+      setError(null);
+      socket.emit("playback:command", {
+        roomId,
+        action: cmd.action,
+        position: cmd.position,
+        videoId: cmd.videoId,
+        commandId: crypto.randomUUID(),
+      });
+    },
+    [socket, roomId, canControl],
+  );
+
+  const resumeFromGesture = useCallback(async () => {
+    const player = playerRef.current;
+    if (!player) return;
+    try {
+      await player.play();
+      setNeedsGesture(false);
+    } catch {
+      setNeedsGesture(true);
+    }
+  }, []);
+
+  const requestSync = useCallback(() => {
+    if (!socket || !roomId) return;
+    socket.emit("playback:sync", { roomId });
+  }, [socket, roomId]);
+
+  return {
+    state,
+    canControl,
+    needsGesture,
+    loadError,
+    error,
+    sendCommand,
+    resumeFromGesture,
+    requestSync,
+  };
+}
+
+
+================================================
+FILE: apps/web/src/hooks/useRoomSession.ts
+================================================
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import type {
+  RoomMemberView,
+  RoomView,
+  RoomRole,
+} from "@syncstream/contracts";
+import type { AppSocket } from "@/lib/socket";
+import { useAuth } from "@/context/AuthContext";
+
+export function useRoomSession(opts: {
+  socket: AppSocket | null;
+  roomId: string;
+  code?: string;
+}) {
+  const { socket, roomId, code } = opts;
+  const { user } = useAuth();
+  const [room, setRoom] = useState<RoomView | null>(null);
+  const [members, setMembers] = useState<RoomMemberView[]>([]);
+  const [joined, setJoined] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [kicked, setKicked] = useState(false);
+
+  const myRole: RoomRole | null =
+    room?.myRole ??
+    members.find((m) => m.userId === user?.id)?.role ??
+    null;
+
+  useEffect(() => {
+    if (!socket || !roomId) return;
+
+    setError(null);
+    setKicked(false);
+    socket.emit("room:join", {
+      roomId,
+      ...(code ? { code } : {}),
+    });
+
+    const onState = (payload: {
+      room: RoomView;
+      members: RoomMemberView[];
+    }) => {
+      setRoom(payload.room);
+      setMembers(payload.members);
+      setJoined(true);
+    };
+    const onMembers = (payload: {
+      roomId: string;
+      members: RoomMemberView[];
+    }) => {
+      if (payload.roomId !== roomId) return;
+      setMembers(payload.members);
+    };
+    const onError = (payload: {
+      code: string;
+      message: string;
+      roomId?: string;
+    }) => {
+      if (payload.roomId && payload.roomId !== roomId) return;
+      setError(payload.message);
+    };
+    const onHostChanged = (payload: {
+      roomId: string;
+      previousHostId: string;
+      newHostId: string;
+      reason: string;
+    }) => {
+      if (payload.roomId !== roomId) return;
+      setRoom((prev) =>
+        prev
+          ? {
+              ...prev,
+              hostId: payload.newHostId,
+              myRole:
+                user?.id === payload.newHostId
+                  ? "HOST"
+                  : prev.myRole === "HOST"
+                    ? "VIEWER"
+                    : prev.myRole,
+            }
+          : prev,
+      );
+    };
+    const onRemoved = (payload: {
+      roomId: string;
+      userId: string;
+      removedBy: string;
+    }) => {
+      if (payload.roomId !== roomId) return;
+      if (payload.userId === user?.id) {
+        setKicked(true);
+        setJoined(false);
+      }
+    };
+    const onRoleChanged = (payload: {
+      roomId: string;
+      userId: string;
+      role: RoomRole;
+    }) => {
+      if (payload.roomId !== roomId) return;
+      if (payload.userId === user?.id) {
+        setRoom((prev) =>
+          prev ? { ...prev, myRole: payload.role } : prev,
+        );
+      }
+    };
+
+    socket.on("room:state", onState);
+    socket.on("room:members", onMembers);
+    socket.on("room:error", onError);
+    socket.on("room:host-changed", onHostChanged);
+    socket.on("room:member-removed", onRemoved);
+    socket.on("room:member-role-changed", onRoleChanged);
+
+    const onConnect = () => {
+      socket.emit("room:join", {
+        roomId,
+        ...(code ? { code } : {}),
+      });
+    };
+    socket.on("connect", onConnect);
+
+    return () => {
+      socket.off("room:state", onState);
+      socket.off("room:members", onMembers);
+      socket.off("room:error", onError);
+      socket.off("room:host-changed", onHostChanged);
+      socket.off("room:member-removed", onRemoved);
+      socket.off("room:member-role-changed", onRoleChanged);
+      socket.off("connect", onConnect);
+      socket.emit("room:leave", { roomId, leaveMembership: false });
+    };
+  }, [socket, roomId, code, user?.id]);
+
+  const leavePermanently = useCallback(() => {
+    if (!socket) return;
+    socket.emit("room:leave", { roomId, leaveMembership: true });
+    setJoined(false);
+  }, [socket, roomId]);
+
+  const transferHost = useCallback(
+    (toUserId: string) => {
+      if (!socket) return;
+      socket.emit("room:transfer-host", { roomId, toUserId });
+    },
+    [socket, roomId],
+  );
+
+  const removeMember = useCallback(
+    (userId: string) => {
+      if (!socket) return;
+      socket.emit("room:remove-member", { roomId, userId });
+    },
+    [socket, roomId],
+  );
+
+  const changeRole = useCallback(
+    (userId: string, role: "CO_HOST" | "VIEWER") => {
+      if (!socket) return;
+      socket.emit("room:change-role", { roomId, userId, role });
+    },
+    [socket, roomId],
+  );
+
+  return {
+    room,
+    members,
+    joined,
+    myRole,
+    error,
+    kicked,
+    leavePermanently,
+    transferHost,
+    removeMember,
+    changeRole,
+  };
+}
+
+
+================================================
+FILE: apps/web/src/hooks/useSocketConnection.ts
+================================================
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { connectSocket, disconnectSocket, type AppSocket } from "@/lib/socket";
+import { getAccessToken } from "@/lib/auth-storage";
+
+export type ConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error";
+
+export function useSocketConnection(enabled: boolean) {
+  const [status, setStatus] = useState<ConnectionStatus>("idle");
+  const [socket, setSocket] = useState<AppSocket | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  useEffect(() => {
+    if (!enabled) {
+      setStatus("idle");
+      setSocket(null);
+      return;
+    }
+    if (!getAccessToken()) {
+      setStatus("error");
+      setError("Not authenticated");
+      return;
+    }
+
+    let s: AppSocket;
+    try {
+      setStatus("connecting");
+      s = connectSocket();
+    } catch (e) {
+      setStatus("error");
+      setError(e instanceof Error ? e.message : "Socket connect failed");
+      return;
+    }
+
+    const onConnect = () => {
+      setStatus("connected");
+      setError(null);
+      setSocket(s);
+    };
+    const onDisconnect = () => setStatus("disconnected");
+    const onConnectError = (err: Error) => {
+      setStatus("error");
+      setError(err.message);
+    };
+
+    s.on("connect", onConnect);
+    s.on("disconnect", onDisconnect);
+    s.on("connect_error", onConnectError);
+    if (s.connected) onConnect();
+    setSocket(s);
+
+    return () => {
+      s.off("connect", onConnect);
+      s.off("disconnect", onDisconnect);
+      s.off("connect_error", onConnectError);
+      if (!enabledRef.current) disconnectSocket();
+    };
+  }, [enabled]);
+
+  return { socket, status, error };
+}
+
+
+================================================
+FILE: apps/web/src/lib/api.ts
+================================================
+import { config } from "./config";
+import {
+  clearSession,
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+  setSession,
+  type StoredUser,
+} from "./auth-storage";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+type ApiSuccess<T> = {
+  success: true;
+  message?: string;
+  data: T;
+};
+
+type ApiFail = {
+  success: false;
+  error: { code: string; message: string; details?: unknown };
+};
+
+async function parseJson(res: Response) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return null;
+    try {
+      const res = await fetch(`${config.apiUrl}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+      const body = (await parseJson(res)) as
+        | ApiSuccess<{
+            accessToken: string;
+            refreshToken: string;
+            expiresIn: string;
+          }>
+        | ApiFail
+        | null;
+      if (!res.ok || !body || !("success" in body) || !body.success) {
+        clearSession();
+        return null;
+      }
+      setSession({
+        accessToken: body.data.accessToken,
+        refreshToken: body.data.refreshToken,
+      });
+      return body.data.accessToken;
+    } catch {
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+export async function apiFetch<T>(
+  path: string,
+  init: RequestInit = {},
+  opts: { auth?: boolean; retry?: boolean } = {},
+): Promise<T> {
+  const { auth = true, retry = true } = opts;
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type") && init.body) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (auth) {
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await fetch(`${config.apiUrl}${path}`, { ...init, headers });
+  const body = await parseJson(res);
+
+  if (res.status === 401 && auth && retry) {
+    const next = await refreshAccessToken();
+    if (next) {
+      setAccessToken(next);
+      return apiFetch<T>(path, init, { auth, retry: false });
+    }
+  }
+
+  if (!res.ok) {
+    const fail = body as ApiFail | null;
+    throw new ApiError(
+      res.status,
+      fail?.error?.code ?? "HTTP_ERROR",
+      (fail?.error?.message ?? res.statusText) || "Request failed",
+    );
+  }
+
+  if (body && typeof body === "object" && "success" in body && body.success) {
+    return (body as ApiSuccess<T>).data;
+  }
+  return body as T;
+}
+
+export type TokenPair = {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: string;
+};
+
+export type AuthResult = {
+  user: StoredUser;
+  tokens: TokenPair;
+};
+
+export const authApi = {
+  register(input: { email: string; password: string; name: string }) {
+    return apiFetch<AuthResult>(
+      "/auth/register",
+      { method: "POST", body: JSON.stringify(input) },
+      { auth: false },
+    );
+  },
+  login(input: { email: string; password: string }) {
+    return apiFetch<AuthResult>(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify(input) },
+      { auth: false },
+    );
+  },
+  me() {
+    return apiFetch<StoredUser>("/auth/me");
+  },
+  logout() {
+    const refreshToken = getRefreshToken();
+    return apiFetch<{ success?: boolean }>(
+      "/auth/logout",
+      { method: "POST", body: JSON.stringify({ refreshToken }) },
+      { auth: false },
+    ).catch(() => null);
+  },
+};
+
+export type RoomView = {
+  id: string;
+  code: string;
+  name: string;
+  visibility: "PRIVATE" | "PUBLIC";
+  hostId: string;
+  maxMembers: number;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+  myRole?: "HOST" | "CO_HOST" | "VIEWER";
+};
+
+export const roomsApi = {
+  create(input: {
+    name: string;
+    visibility?: "PRIVATE" | "PUBLIC";
+    maxMembers?: number;
+  }) {
+    return apiFetch<RoomView>("/rooms", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  joinByCode(code: string) {
+    return apiFetch<{ room: RoomView; members: unknown[]; created: boolean }>(
+      "/rooms/join",
+      { method: "POST", body: JSON.stringify({ code }) },
+    );
+  },
+  get(id: string) {
+    return apiFetch<RoomView>(`/rooms/${id}`);
+  },
+  leave(id: string) {
+    return apiFetch<unknown>(`/rooms/${id}/leave`, { method: "POST" });
+  },
+};
+
+
+================================================
+FILE: apps/web/src/lib/auth-storage.ts
+================================================
+const ACCESS = "ss_access";
+const REFRESH = "ss_refresh";
+const USER = "ss_user";
+
+export type StoredUser = {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+export function getAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(ACCESS);
+}
+
+export function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(REFRESH);
+}
+
+export function getStoredUser(): StoredUser | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(USER);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredUser;
+  } catch {
+    return null;
+  }
+}
+
+export function setSession(opts: {
+  accessToken: string;
+  refreshToken: string;
+  user?: StoredUser;
+}) {
+  localStorage.setItem(ACCESS, opts.accessToken);
+  localStorage.setItem(REFRESH, opts.refreshToken);
+  if (opts.user) localStorage.setItem(USER, JSON.stringify(opts.user));
+}
+
+export function setAccessToken(token: string) {
+  localStorage.setItem(ACCESS, token);
+}
+
+export function clearSession() {
+  localStorage.removeItem(ACCESS);
+  localStorage.removeItem(REFRESH);
+  localStorage.removeItem(USER);
+}
+
+
+================================================
+FILE: apps/web/src/lib/config.ts
+================================================
+export const config = {
+  apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000",
+  socketUrl: process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:4000",
+  socketPath: process.env.NEXT_PUBLIC_SOCKET_PATH ?? "/socket.io",
+} as const;
+
+
+================================================
+FILE: apps/web/src/lib/socket.ts
+================================================
+"use client";
+
+import { io, type Socket } from "socket.io-client";
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from "@syncstream/contracts";
+import { config } from "./config";
+import { getAccessToken } from "./auth-storage";
+
+export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+
+let socket: AppSocket | null = null;
+
+export function getSocket(): AppSocket | null {
+  return socket;
+}
+
+export function connectSocket(): AppSocket {
+  if (socket?.connected) return socket;
+
+  const token = getAccessToken();
+  if (!token) {
+    throw new Error("Cannot connect socket without access token");
+  }
+
+  if (socket) {
+    socket.auth = { token };
+    socket.connect();
+    return socket;
+  }
+
+  socket = io(config.socketUrl, {
+    path: config.socketPath,
+    autoConnect: true,
+    transports: ["websocket", "polling"],
+    auth: { token },
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 5_000,
+  }) as AppSocket;
+
+  return socket;
+}
+
+export function disconnectSocket() {
+  if (!socket) return;
+  socket.removeAllListeners();
+  socket.disconnect();
+  socket = null;
+}
+
+export function updateSocketAuth(token: string) {
+  if (!socket) return;
+  socket.auth = { token };
+}
+
+
+================================================
+FILE: apps/web/src/lib/playback/math.ts
+================================================
+import type { PlaybackState } from "@syncstream/contracts";
+
+export function expectedPosition(state: PlaybackState, nowMs: number): number {
+  if (state.status === "PAUSED") return Math.max(0, state.position);
+  const elapsedSec = (nowMs - state.updatedAt) / 1000;
+  return Math.max(0, state.position + state.playbackRate * elapsedSec);
+}
+
+export type DriftAction =
+  | { kind: "none" }
+  | { kind: "rate"; rate: number }
+  | { kind: "seek"; position: number };
+
+export function decideDriftCorrection(
+  localPosition: number,
+  expected: number,
+  baseRate: number,
+): DriftAction {
+  const driftSec = localPosition - expected;
+  const abs = Math.abs(driftSec);
+
+  if (abs < 0.15) return { kind: "none" };
+
+  if (abs <= 0.5) {
+    const adj = driftSec < 0 ? 1.04 : 0.96;
+    return { kind: "rate", rate: baseRate * adj };
+  }
+
+  return { kind: "seek", position: expected };
+}
+
+
+================================================
+FILE: apps/web/src/lib/playback/video-player.ts
+================================================
+export interface VideoPlayer {
+  getCurrentTime(): number;
+  isPlaying(): boolean;
+  play(): Promise<void>;
+  pause(): void;
+  seek(position: number): void;
+  setPlaybackRate(rate: number): void;
+  setSrc(url: string): void;
+  getSrc(): string;
+  ready(): boolean;
+  on(event: string, handler: () => void): void;
+  off(event: string, handler: () => void): void;
+}
+
+export class HtmlVideoPlayer implements VideoPlayer {
+  constructor(private readonly el: HTMLVideoElement) {}
+
+  getCurrentTime(): number {
+    return this.el.currentTime || 0;
+  }
+
+  isPlaying(): boolean {
+    return !this.el.paused && !this.el.ended;
+  }
+
+  async play(): Promise<void> {
+    try {
+      await this.el.play();
+    } catch {
+      throw new Error("PLAY_BLOCKED");
+    }
+  }
+
+  pause(): void {
+    this.el.pause();
+  }
+
+  seek(position: number): void {
+    if (!Number.isFinite(position) || position < 0) return;
+    const wasPlaying = this.isPlaying();
+    this.el.currentTime = position;
+    if (wasPlaying) void this.play().catch(() => undefined);
+  }
+
+  setPlaybackRate(rate: number): void {
+    if (!Number.isFinite(rate) || rate <= 0) return;
+    this.el.playbackRate = rate;
+  }
+
+  setSrc(url: string): void {
+    if (this.el.src === url) return;
+    this.el.src = url;
+    this.el.load();
+  }
+
+  getSrc(): string {
+    return this.el.currentSrc || this.el.src || "";
+  }
+
+  ready(): boolean {
+    return this.el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+  }
+
+  on(event: string, handler: () => void): void {
+    this.el.addEventListener(event, handler);
+  }
+
+  off(event: string, handler: () => void): void {
+    this.el.removeEventListener(event, handler);
+  }
+}
 
 
 ================================================

@@ -1,23 +1,88 @@
-# Dependencies
+# ─── Dependencies ───────────────────────────────────────────
 node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
 
-# Build output
+# ─── Builds / outputs ───────────────────────────────────────
 dist/
 build/
-coverage/
+out/
+*.tsbuildinfo
 
-# Generated files
-generated/
-.prisma/
+# Next.js
+apps/web/.next/
+apps/web/out/
 
-# Environment variables
+# API compile output
+apps/api/dist/
+
+# Packages
+packages/*/dist/
+
+# ─── Env & secrets ──────────────────────────────────────────
 .env
 .env.*
 !.env.example
+!.env*.example
+apps/*/.env
+apps/*/.env.*
+!apps/*/.env.example
 
-# Logs and OS files
+# ─── Prisma ─────────────────────────────────────────────────
+# Keep migrations in git; ignore generated client if it lives under src
+apps/api/src/generated/
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+
+# ─── Logs & debug ───────────────────────────────────────────
+logs/
 *.log
-.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# TypeScript build cache
-*.tsbuildinfo
+# ─── Test / coverage ────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+
+# ─── Caches ─────────────────────────────────────────────────
+.cache/
+.turbo/
+.eslintcache
+.prettiercache
+*.swp
+*.swo
+*~
+
+# ─── OS ─────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ─── Editors / IDEs ─────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.sublime-project
+*.sublime-workspace
+
+# ─── Docker (local overrides only) ──────────────────────────
+docker-compose.override.yml
+
+# ─── Misc ───────────────────────────────────────────────────
+*.local
+.vercel
+.netlify
+.wrangler
+.tmp/
+tmp/
+temp/
